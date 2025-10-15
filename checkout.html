@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout - GoalTickets</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 60px 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 600px;
+            width: 90%;
+        }
+        
+        .emoji {
+            font-size: 80px;
+            margin-bottom: 30px;
+            animation: bounce 2s infinite;
+        }
+        
+        .message {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .subtitle {
+            font-size: 24px;
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+        
+        .amount {
+            font-size: 36px;
+            color: #ff6b6b;
+            font-weight: bold;
+            margin: 20px 0;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .back-button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+        }
+        
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-10px);
+            }
+            60% {
+                transform: translateY(-5px);
+            }
+        }
+        
+        .sparkle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: white;
+            border-radius: 50%;
+            animation: sparkle 2s infinite;
+        }
+        
+        @keyframes sparkle {
+            0%, 100% { opacity: 0; transform: scale(0); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+        
+        .sparkle:nth-child(1) { top: 20%; left: 20%; animation-delay: 0s; }
+        .sparkle:nth-child(2) { top: 30%; right: 20%; animation-delay: 0.5s; }
+        .sparkle:nth-child(3) { bottom: 30%; left: 30%; animation-delay: 1s; }
+        .sparkle:nth-child(4) { bottom: 20%; right: 30%; animation-delay: 1.5s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        <div class="sparkle"></div>
+        
+        <div class="emoji">💰</div>
+        <div class="message">БратЦ снял с тебя</div>
+        <div class="amount">$3,000</div>
+        <div class="subtitle">Спасибо за покупку! 😄</div>
+        
+        <a href="/" class="back-button">Вернуться на главную</a>
+    </div>
+    
+    <script>
+        // Добавляем звуковой эффект (если браузер поддерживает)
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+            oscillator.frequency.setValueAtTime(400, audioContext.currentTime + 0.2);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        } catch (e) {
+            // Игнорируем ошибки аудио
+        }
+        
+        // Логируем событие для аналитики
+        console.log('Checkout intercepted at:', new Date().toISOString());
+    </script>
+</body>
+</html>

