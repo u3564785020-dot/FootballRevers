@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Отключаем CSP для прокси
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
@@ -17,80 +17,95 @@ app.use(cors({
   credentials: true
 }));
 
-// Логирование запросов
+// Кэширование статических файлов
+app.use(express.static('index_files', {
+  maxAge: '1d',
+  etag: false
+}));
+
+// Логирование только важных запросов
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  if (!req.url.includes('/cdn/') && !req.url.includes('/api/')) {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  }
   next();
 });
 
-// Настройка прокси для goaltickets.com
+// Обработка статических файлов локально
+app.get('/index_files/*', (req, res, next) => {
+  // Если файл есть локально, отдаем его
+  next();
+});
+
+// Обработка POST запросов (возвращаем 200 для избежания ошибок)
+app.post('/api/*', (req, res) => {
+  res.status(200).json({ success: true });
+});
+
+app.post('/cart/*', (req, res) => {
+  res.status(200).json({ success: true });
+});
+
+app.post('/.well-known/*', (req, res) => {
+  res.status(200).json({ success: true });
+});
+
+// Настройка прокси только для HTML страниц
 const proxyOptions = {
   target: 'https://goaltickets.com',
   changeOrigin: true,
   secure: true,
   followRedirects: true,
-  pathRewrite: {
-    '^/': '/' // Убираем префикс если нужно
-  },
+  timeout: 10000, // 10 секунд таймаут
+  proxyTimeout: 10000,
   onProxyReq: (proxyReq, req, res) => {
-    // Добавляем заголовки для обхода защиты
-    proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-    proxyReq.setHeader('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8');
+    proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    proxyReq.setHeader('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
     proxyReq.setHeader('Accept-Language', 'en-US,en;q=0.5');
     proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
     proxyReq.setHeader('Connection', 'keep-alive');
-    proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
+    proxyReq.setHeader('Cache-Control', 'no-cache');
   },
   onProxyRes: (proxyRes, req, res) => {
-    // Удаляем заголовки безопасности
+    // Удаляем проблемные заголовки
     delete proxyRes.headers['x-frame-options'];
     delete proxyRes.headers['content-security-policy'];
     delete proxyRes.headers['x-content-type-options'];
     delete proxyRes.headers['referrer-policy'];
     
-    // Добавляем CORS заголовки
+    // Добавляем кэширование
+    if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
+      proxyRes.headers['Cache-Control'] = 'public, max-age=300'; // 5 минут кэш
+    }
+    
+    // Добавляем CORS
     proxyRes.headers['Access-Control-Allow-Origin'] = '*';
     proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
     proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-    
-    // Заменяем ссылки в HTML
-    if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
-      let body = '';
-      proxyRes.on('data', (chunk) => {
-        body += chunk;
-      });
-      
-      proxyRes.on('end', () => {
-        try {
-          // Заменяем ссылки на goaltickets.com на наш домен
-          const modifiedBody = body
-            .replace(/https:\/\/goaltickets\.com/g, '')
-            .replace(/http:\/\/goaltickets\.com/g, '')
-            .replace(/\/\/goaltickets\.com/g, '')
-            .replace(/goaltickets\.com/g, req.get('host'));
-          
-          // Проверяем, не отправлены ли уже заголовки
-          if (!res.headersSent) {
-            res.setHeader('Content-Length', Buffer.byteLength(modifiedBody));
-            res.end(modifiedBody);
-          }
-        } catch (error) {
-          console.error('Error processing response:', error);
-          if (!res.headersSent) {
-            res.end(body);
-          }
-        }
-      });
-    }
   },
   onError: (err, req, res) => {
-    console.error('Proxy Error:', err);
-    res.status(500).send('Proxy Error: ' + err.message);
+    console.error('Proxy Error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).send('Service temporarily unavailable');
+    }
   }
 };
 
-// Применяем прокси ко всем запросам
-app.use('/', createProxyMiddleware(proxyOptions));
+// Применяем прокси только к корневой странице
+app.get('/', createProxyMiddleware(proxyOptions));
+
+// Для всех остальных GET запросов - прокси к оригинальному сайту
+app.get('*', createProxyMiddleware({
+  target: 'https://goaltickets.com',
+  changeOrigin: true,
+  secure: true,
+  timeout: 5000,
+  onError: (err, req, res) => {
+    if (!res.headersSent) {
+      res.status(404).send('Not found');
+    }
+  }
+}));
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
