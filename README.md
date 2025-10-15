@@ -2,6 +2,16 @@
 
 Реверс-прокси для сайта goaltickets.com, развернутый на Railway.
 
+## 📁 GitHub Repository
+**Репозиторий**: [u3564785020-dot/FootballRevers](https://github.com/u3564785020-dot/FootballRevers.git)
+
+## 🚀 Быстрое развертывание
+1. Перейдите на [Railway.app](https://railway.app)
+2. Нажмите "New Project" → "Deploy from GitHub repo"
+3. Выберите репозиторий: `u3564785020-dot/FootballRevers`
+4. Нажмите "Deploy Now"
+5. Получите ваш URL!
+
 ## 🚀 Развертывание на Railway
 
 1. **Установите Railway CLI:**
