@@ -4,7 +4,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-const VERSION = '6.0.0'; // Финальная версия
+const VERSION = '7.0.0'; // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ
 
 // Middleware
 app.use(cors({
