@@ -1,6 +1,6 @@
 {
   "name": "goaltickets-proxy",
-  "version": "7.0.2",
+  "version": "7.0.3",
   "description": "Reverse proxy for goaltickets.com - FORCE UPDATE",
   "main": "server.js",
   "scripts": {

