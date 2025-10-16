@@ -4,7 +4,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-const VERSION = '7.0.3'; // FIXED BY AI ASSISTANT - CDN PROXY HANDLERS
+const VERSION = '7.0.4'; // FIXED BY AI ASSISTANT - ROUTE ORDER FIX
 
 // Middleware
 app.use(cors({
@@ -226,11 +226,7 @@ const proxyOptions = {
   }
 };
 
-// Применяем прокси ко всем GET запросам
-app.get('/', createProxyMiddleware(proxyOptions));
-app.get('*', createProxyMiddleware(proxyOptions));
-
-// 🛒 ОБРАБОТКА КОРЗИНЫ - FIXED BY AI ASSISTANT v7.0.3
+// 🛒 ОБРАБОТКА КОРЗИНЫ - FIXED BY AI ASSISTANT v7.0.4
 // Перехватываем CDN запросы ДО основного прокси
 app.get('/cdn/*', (req, res, next) => {
   console.log('📦 CDN request intercepted:', req.url);
@@ -287,6 +283,11 @@ app.get('/checkouts/internal/*', (req, res, next) => {
   });
   internalProxy(req, res);
 });
+
+// Применяем прокси ко всем остальным GET запросам
+app.get('/', createProxyMiddleware(proxyOptions));
+app.get('*', createProxyMiddleware(proxyOptions));
+
 app.get('/cart.js', (req, res) => {
   console.log('🛒 Cart.js GET intercepted:', req.url);
   res.status(200).json({
