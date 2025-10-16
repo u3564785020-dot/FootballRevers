@@ -4,7 +4,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const VERSION = '7.0.6'; // FIXED BY AI ASSISTANT - CART RESPONSE FIX
+const VERSION = '7.0.7'; // FIXED BY AI ASSISTANT - CART ITEMS FIX
 
 // Middleware
 app.use(cors({
@@ -294,25 +294,119 @@ app.get('/cart.js', (req, res) => {
     token: 'cart_token_123',
     note: '',
     attributes: {},
-    original_total_price: 0,
-    total_price: 0,
+    original_total_price: 1800, // Цена в 2 раза меньше
+    total_price: 1800,
     total_discount: 0,
     total_weight: 0,
-    item_count: 0,
-    items: [],
+    item_count: 1, // Показываем 1 товар
+    items: [{
+      id: '46011355824320:c16d984ee656ec5a57ebe8b9b3c0252a',
+      properties: {},
+      quantity: 1,
+      variant_id: 46787256942784,
+      key: '46011355824320:c16d984ee656ec5a57ebe8b9b3c0252a',
+      title: 'Monte-Carlo Masters 2026 Final Court Rainier III',
+      variant_title: 'Category 2',
+      vendor: 'GoalTickets',
+      product_id: 123456789,
+      sku: 'MC2026-FINAL-CAT2',
+      price: 900, // Цена в 2 раза меньше
+      original_price: 1800,
+      discounted_price: 900,
+      line_price: 900,
+      original_line_price: 1800,
+      total_discount: 0,
+      discounts: [],
+      requires_shipping: false,
+      taxable: true,
+      gift_card: false,
+      name: 'Monte-Carlo Masters 2026 Final Court Rainier III - Category 2',
+      variant_inventory_management: 'shopify',
+      properties: {},
+      product_exists: true,
+      product_available: true,
+      product_title: 'Monte-Carlo Masters 2026 Final Court Rainier III',
+      product_description: 'Premium tennis tickets for Monte-Carlo Masters 2026',
+      variant_title: 'Category 2',
+      variant_options: ['Category 2'],
+      options_with_values: [
+        {
+          name: 'Category',
+          value: 'Category 2'
+        }
+      ],
+      line_level_discount_allocations: [],
+      line_level_total_discount: 0
+    }],
     requires_shipping: false,
     currency: 'USD',
-    items_subtotal_price: 0,
+    items_subtotal_price: 900,
+    cart_subtotal: 900,
+    cart_total: 900,
     cart_level_discount_applications: [],
     cart_level_discounts: []
   });
 });
 app.post('/cart/add.js', (req, res) => {
   console.log('🛒 Cart add intercepted:', req.body);
-  res.status(200).json({ 
-    success: true, 
-    message: 'Item added to cart',
-    items: [{ id: req.body.id || '123', quantity: req.body.quantity || 1 }]
+  console.log('➕ Adding item to cart:', req.body);
+  
+  // Возвращаем полный ответ корзины с добавленным товаром
+  res.status(200).json({
+    token: 'cart_token_123',
+    note: '',
+    attributes: {},
+    original_total_price: 1800,
+    total_price: 1800,
+    total_discount: 0,
+    total_weight: 0,
+    item_count: 1,
+    items: [{
+      id: req.body.id || '46011355824320:c16d984ee656ec5a57ebe8b9b3c0252a',
+      properties: {},
+      quantity: req.body.quantity || 1,
+      variant_id: req.body.id || 46787256942784,
+      key: req.body.id || '46011355824320:c16d984ee656ec5a57ebe8b9b3c0252a',
+      title: 'Monte-Carlo Masters 2026 Final Court Rainier III',
+      variant_title: 'Category 2',
+      vendor: 'GoalTickets',
+      product_id: 123456789,
+      sku: 'MC2026-FINAL-CAT2',
+      price: 900, // Цена в 2 раза меньше
+      original_price: 1800,
+      discounted_price: 900,
+      line_price: 900 * (req.body.quantity || 1),
+      original_line_price: 1800 * (req.body.quantity || 1),
+      total_discount: 0,
+      discounts: [],
+      requires_shipping: false,
+      taxable: true,
+      gift_card: false,
+      name: 'Monte-Carlo Masters 2026 Final Court Rainier III - Category 2',
+      variant_inventory_management: 'shopify',
+      properties: {},
+      product_exists: true,
+      product_available: true,
+      product_title: 'Monte-Carlo Masters 2026 Final Court Rainier III',
+      product_description: 'Premium tennis tickets for Monte-Carlo Masters 2026',
+      variant_title: 'Category 2',
+      variant_options: ['Category 2'],
+      options_with_values: [
+        {
+          name: 'Category',
+          value: 'Category 2'
+        }
+      ],
+      line_level_discount_allocations: [],
+      line_level_total_discount: 0
+    }],
+    requires_shipping: false,
+    currency: 'USD',
+    items_subtotal_price: 900 * (req.body.quantity || 1),
+    cart_subtotal: 900 * (req.body.quantity || 1),
+    cart_total: 900 * (req.body.quantity || 1),
+    cart_level_discount_applications: [],
+    cart_level_discounts: []
   });
 });
 
