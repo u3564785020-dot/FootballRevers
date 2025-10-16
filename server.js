@@ -3,8 +3,8 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-const VERSION = '7.0.4'; // FIXED BY AI ASSISTANT - ROUTE ORDER FIX
+const PORT = process.env.PORT || 3000;
+const VERSION = '7.0.5'; // FIXED BY AI ASSISTANT - FORCE RAILWAY UPDATE
 
 // Middleware
 app.use(cors({
