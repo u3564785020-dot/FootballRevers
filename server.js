@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(helmet({
@@ -25,10 +25,32 @@ app.use(express.static('index_files', {
 
 // Логирование только важных запросов
 app.use((req, res, next) => {
-  if (!req.url.includes('/cdn/') && !req.url.includes('/api/')) {
+  if (!req.url.includes('/cdn/') && !req.url.includes('/api/') && !req.url.includes('/.well-known/')) {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
   }
   next();
+});
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+// Unhandled promise rejection handling
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Uncaught exception handling
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
 });
 
 // Обработка статических файлов локально
@@ -860,13 +882,3 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Access your proxy at: http://localhost:${PORT}`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
