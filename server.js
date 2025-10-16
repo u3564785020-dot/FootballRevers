@@ -23,7 +23,7 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.7'; // COMPREHENSIVE FIX: prices, CSP, CSS rewriting, SW
+const VERSION = '8.0.8'; // FIX: multiplier error, cart sections, fonts.shopifycdn.com CORS
 
 // Configuration
 const config = {
@@ -196,12 +196,23 @@ function rewriteHtml(html, baseUrl) {
     }
   });
   
-  // Rewrite form actions
-  $('form[action^="https://goaltickets.com"]').each((i, el) => {
-    const action = $(el).attr('action');
-    const url = new URL(action);
-    $(el).attr('action', url.pathname + url.search + url.hash);
-  });
+    // Rewrite form actions
+    $('form[action^="https://goaltickets.com"]').each((i, el) => {
+      const action = $(el).attr('action');
+      const url = new URL(action);
+      $(el).attr('action', url.pathname + url.search + url.hash);
+    });
+    
+    // Rewrite Shopify fonts URLs
+    $('link[href*="fonts.shopifycdn.com"]').each((i, el) => {
+      const href = $(el).attr('href');
+      $(el).attr('href', href.replace('https://fonts.shopifycdn.com', '/fonts.shopifycdn.com'));
+    });
+    
+    $('link[href*="fonts.shopifycdn.com"]').each((i, el) => {
+      const href = $(el).attr('href');
+      $(el).attr('href', href.replace('https://fonts.shopifycdn.com', '/fonts.shopifycdn.com'));
+    });
   
   // Rewrite meta tags
   $('meta[content*="goaltickets.com"]').each((i, el) => {
@@ -403,7 +414,7 @@ function modifyPrices(data, contentType) {
         (function() {
           if (${config.enablePriceModifier}) {
             const multiplier = ${config.priceMultiplier};
-            const label = 'ТЕСТОВАЯ ЦЕНА (не для реальных покупок): -${Math.round((1 - multiplier) * 100)}%';
+            const label = 'ТЕСТОВАЯ ЦЕНА (не для реальных покупок): -${Math.round((1 - config.priceMultiplier) * 100)}%';
             
             function modifyPrices() {
               const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], [class*="amount"], [data-price]');
@@ -853,6 +864,89 @@ app.post('/cart/change.js', (req, res) => {
     cart_subtotal: 0,
     cart_total: 0
   });
+});
+
+// Cart sections handler - CRITICAL for cart functionality
+app.get('/cart', (req, res, next) => {
+  if (req.query.sections) {
+    console.log('🛒 Cart sections request:', req.url);
+    const sectionsProxy = createProxyMiddleware({
+      target: config.target,
+      changeOrigin: true,
+      secure: true,
+      timeout: 15000,
+      onProxyReq: (proxyReq, req, res) => {
+        proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        proxyReq.setHeader('Accept', 'application/json, text/html, */*');
+        proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+        proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+      },
+      onProxyRes: (proxyRes, req, res) => {
+        // Remove CORS restrictions
+        delete proxyRes.headers['access-control-allow-origin'];
+        delete proxyRes.headers['access-control-allow-methods'];
+        delete proxyRes.headers['access-control-allow-headers'];
+        
+        // Add our CORS headers
+        proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+        proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+        proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+        
+        // Set correct content type
+        proxyRes.headers['Content-Type'] = 'application/json; charset=utf-8';
+        
+        console.log('🛒 Cart sections response:', proxyRes.headers['content-type']);
+      }
+    });
+    sectionsProxy(req, res);
+  } else {
+    next();
+  }
+});
+
+// Shopify fonts handler - MUST BE BEFORE MAIN PROXY
+app.get('/fonts.shopifycdn.com/*', (req, res, next) => {
+  console.log('🔤 Shopify fonts request:', req.url);
+  const fontUrl = req.url.replace('/fonts.shopifycdn.com', 'https://fonts.shopifycdn.com');
+  const fontProxy = createProxyMiddleware({
+    target: 'https://fonts.shopifycdn.com',
+    changeOrigin: true,
+    secure: true,
+    timeout: 15000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', '*/*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Remove CORS restrictions
+      delete proxyRes.headers['access-control-allow-origin'];
+      delete proxyRes.headers['access-control-allow-methods'];
+      delete proxyRes.headers['access-control-allow-headers'];
+      
+      // Add our CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+      
+      // Fix MIME types for fonts
+      if (req.url.includes('.woff2')) {
+        proxyRes.headers['Content-Type'] = 'font/woff2';
+      } else if (req.url.includes('.woff')) {
+        proxyRes.headers['Content-Type'] = 'font/woff';
+      } else if (req.url.includes('.ttf')) {
+        proxyRes.headers['Content-Type'] = 'font/ttf';
+      }
+      
+      console.log('🔤 Shopify fonts response:', proxyRes.headers['content-type']);
+    }
+  });
+  fontProxy(req, res);
 });
 
 // Service Worker handler - MUST BE BEFORE MAIN PROXY
