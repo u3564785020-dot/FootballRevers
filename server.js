@@ -23,7 +23,7 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.4';
+const VERSION = '8.0.5';
 
 // Configuration
 const config = {
@@ -186,6 +186,54 @@ function rewriteHtml(html, baseUrl) {
     }
   });
   
+  // Add cart drawer fix CSS
+  $('head').append(`
+    <style>
+      /* Fix cart drawer positioning */
+      [data-cart-drawer], .cart-drawer, .drawer, [class*="drawer"], [class*="cart-drawer"] {
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 400px !important;
+        height: 100vh !important;
+        z-index: 9999 !important;
+        transform: translateX(0) !important;
+        transition: transform 0.3s ease !important;
+        left: auto !important;
+        bottom: auto !important;
+        max-width: 400px !important;
+        max-height: 100vh !important;
+        overflow: auto !important;
+        background: white !important;
+        box-shadow: -2px 0 10px rgba(0,0,0,0.1) !important;
+      }
+      
+      .cart-overlay, .overlay, [class*="overlay"] {
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        z-index: 9998 !important;
+      }
+      
+      /* Hide full-screen modal styles */
+      [data-cart-drawer].modal, .cart-drawer.modal, .drawer.modal {
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        left: auto !important;
+        bottom: auto !important;
+        width: 400px !important;
+        height: 100vh !important;
+        max-width: 400px !important;
+        max-height: 100vh !important;
+        transform: translateX(0) !important;
+      }
+    </style>
+  `);
+
   // Add WebSocket connection script
   $('head').append(`
     <script>
@@ -254,6 +302,30 @@ function rewriteHtml(html, baseUrl) {
           }
         };
       })();
+      
+      // Fix cart drawer on page load and mutations
+      function fixCartDrawer() {
+        const cartDrawer = document.querySelector('[data-cart-drawer], .cart-drawer, .drawer, [class*="drawer"], [class*="cart-drawer"]');
+        if (cartDrawer) {
+          cartDrawer.style.position = 'fixed';
+          cartDrawer.style.top = '0';
+          cartDrawer.style.right = '0';
+          cartDrawer.style.width = '400px';
+          cartDrawer.style.height = '100vh';
+          cartDrawer.style.zIndex = '9999';
+          cartDrawer.style.transform = 'translateX(0)';
+          cartDrawer.style.left = 'auto';
+          cartDrawer.style.bottom = 'auto';
+          cartDrawer.style.maxWidth = '400px';
+          cartDrawer.style.maxHeight = '100vh';
+          cartDrawer.style.overflow = 'auto';
+        }
+      }
+      
+      // Run on load and mutations
+      window.addEventListener('load', fixCartDrawer);
+      const observer = new MutationObserver(fixCartDrawer);
+      observer.observe(document.body, { childList: true, subtree: true });
     </script>
   `);
   
