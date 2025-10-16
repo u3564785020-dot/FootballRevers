@@ -23,7 +23,7 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.3';
+const VERSION = '8.0.4';
 
 // Configuration
 const config = {
@@ -59,7 +59,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https:", "http:", "data:"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:", "http:", "data:", "blob:"],
       fontSrc: ["'self'", "https:", "http:", "data:"],
       imgSrc: ["'self'", "data:", "https:", "http:", "blob:"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:", "http:", "blob:"],
@@ -502,6 +502,60 @@ app.get('/ws-info', (req, res) => {
   });
 });
 
+// Special handlers for ALL CDN resources - MUST BE FIRST
+app.get('/cdn/*', (req, res, next) => {
+  console.log('🌐 CDN request:', req.url);
+  const cdnProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    timeout: 15000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', '*/*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Remove all CORS restrictions
+      delete proxyRes.headers['access-control-allow-origin'];
+      delete proxyRes.headers['access-control-allow-methods'];
+      delete proxyRes.headers['access-control-allow-headers'];
+      
+      // Add our CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+      
+      // Fix MIME types for all CDN resources
+      if (req.url.includes('.woff2')) {
+        proxyRes.headers['Content-Type'] = 'font/woff2';
+      } else if (req.url.includes('.woff')) {
+        proxyRes.headers['Content-Type'] = 'font/woff';
+      } else if (req.url.includes('.ttf')) {
+        proxyRes.headers['Content-Type'] = 'font/ttf';
+      } else if (req.url.includes('.eot')) {
+        proxyRes.headers['Content-Type'] = 'application/vnd.ms-fontobject';
+      } else if (req.url.includes('.js')) {
+        proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+      } else if (req.url.includes('.css')) {
+        proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
+      } else if (req.url.includes('.png')) {
+        proxyRes.headers['Content-Type'] = 'image/png';
+      } else if (req.url.includes('.jpg') || req.url.includes('.jpeg')) {
+        proxyRes.headers['Content-Type'] = 'image/jpeg';
+      } else if (req.url.includes('.svg')) {
+        proxyRes.headers['Content-Type'] = 'image/svg+xml';
+      }
+      
+      console.log('🌐 CDN response:', proxyRes.headers['content-type']);
+    }
+  });
+  cdnProxy(req, res);
+});
+
 // Special font handlers - MUST BE BEFORE CDN HANDLER
 app.get('/cdn/fonts/*', (req, res, next) => {
   console.log('🔤 Font request:', req.url);
@@ -544,51 +598,6 @@ app.get('/cdn/fonts/*', (req, res, next) => {
   fontProxy(req, res);
 });
 
-// Special CDN handlers for fonts and assets - MUST BE BEFORE MAIN PROXY
-app.get('/cdn/*', (req, res, next) => {
-  console.log('📦 CDN request:', req.url);
-  const cdnProxy = createProxyMiddleware({
-    target: 'https://goaltickets.com',
-    changeOrigin: true,
-    secure: true,
-    timeout: 15000,
-    onProxyReq: (proxyReq, req, res) => {
-      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-      proxyReq.setHeader('Accept', '*/*');
-      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
-      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
-    },
-    onProxyRes: (proxyRes, req, res) => {
-      // Remove all CORS restrictions
-      delete proxyRes.headers['access-control-allow-origin'];
-      delete proxyRes.headers['access-control-allow-methods'];
-      delete proxyRes.headers['access-control-allow-headers'];
-      
-      // Add our CORS headers
-      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
-      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
-      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
-      
-      // Fix MIME types
-      if (req.url.includes('.woff2')) {
-        proxyRes.headers['Content-Type'] = 'font/woff2';
-      } else if (req.url.includes('.woff')) {
-        proxyRes.headers['Content-Type'] = 'font/woff';
-      } else if (req.url.includes('.ttf')) {
-        proxyRes.headers['Content-Type'] = 'font/ttf';
-      } else if (req.url.includes('.js')) {
-        proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
-      } else if (req.url.includes('.css')) {
-        proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
-      }
-      
-      console.log('📦 CDN response:', proxyRes.headers['content-type']);
-    }
-  });
-  cdnProxy(req, res);
-});
 
 // Web-pixels handlers - MUST BE BEFORE MAIN PROXY
 app.get('/web-pixels@*', (req, res, next) => {
@@ -620,6 +629,38 @@ app.get('/web-pixels@*', (req, res, next) => {
     }
   });
   pixelProxy(req, res);
+});
+
+// Checkouts handlers - MUST BE BEFORE MAIN PROXY
+app.get('/checkouts/internal/*', (req, res, next) => {
+  console.log('🎯 Checkout request:', req.url);
+  const checkoutProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    timeout: 15000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', '*/*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Add CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      
+      // Fix MIME types
+      if (req.url.includes('.js')) {
+        proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+      }
+      
+      console.log('🎯 Checkout response:', proxyRes.headers['content-type']);
+    }
+  });
+  checkoutProxy(req, res);
 });
 
 // API handlers - MUST BE BEFORE MAIN PROXY
