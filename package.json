@@ -1,6 +1,6 @@
 {
   "name": "goaltickets-proxy",
-  "version": "8.0.9",
+  "version": "8.0.10",
   "description": "Professional reverse proxy for goaltickets.com with real-time cart sync",
   "main": "server.js",
   "scripts": {

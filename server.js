@@ -24,7 +24,7 @@ const app = express();
 app.set('trust proxy', 1); // Enable trust proxy for rate limiting and other middleware
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.9'; // COMPREHENSIVE FIX: complete URL rewriting, redirect handling, error fixes
+const VERSION = '8.0.10'; // ULTIMATE FIX: aggressive URL rewriting, 502 fixes, cart JSON fixes
 
 // Configuration
 const config = {
@@ -226,20 +226,44 @@ function rewriteHtml(html, baseUrl) {
       }
     });
     
-    // Rewrite all remaining goaltickets.com URLs in any attribute
-    $('*[href*="goaltickets.com"], *[src*="goaltickets.com"], *[action*="goaltickets.com"]').each((i, el) => {
+    // AGGRESSIVE: Rewrite ALL goaltickets.com URLs in ANY attribute
+    $('*').each((i, el) => {
       const $el = $(el);
-      ['href', 'src', 'action'].forEach(attr => {
+      // Check all possible attributes that might contain URLs
+      ['href', 'src', 'action', 'data-src', 'data-href', 'data-url', 'content', 'poster', 'background', 'style'].forEach(attr => {
         const value = $el.attr(attr);
-        if (value && value.includes('goaltickets.com')) {
+        if (value && typeof value === 'string' && value.includes('goaltickets.com')) {
           if (value.includes('/cdn/')) {
-            $el.attr(attr, value.replace('https://goaltickets.com', ''));
+            $el.attr(attr, value.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, ''));
           } else {
-            const url = new URL(value);
-            $el.attr(attr, url.pathname + url.search + url.hash);
+            try {
+              const url = new URL(value);
+              $el.attr(attr, url.pathname + url.search + url.hash);
+            } catch (e) {
+              // If URL parsing fails, just remove the domain
+              $el.attr(attr, value.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, ''));
+            }
           }
         }
       });
+    });
+    
+    // AGGRESSIVE: Rewrite URLs in style attributes
+    $('*[style*="goaltickets.com"]').each((i, el) => {
+      const style = $(el).attr('style');
+      if (style) {
+        const newStyle = style.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, '');
+        $(el).attr('style', newStyle);
+      }
+    });
+    
+    // AGGRESSIVE: Rewrite URLs in inline JavaScript
+    $('script:not([src])').each((i, el) => {
+      const content = $(el).html();
+      if (content && content.includes('goaltickets.com')) {
+        const newContent = content.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, '');
+        $(el).html(newContent);
+      }
     });
   
   // Rewrite meta tags
@@ -830,29 +854,73 @@ app.get('/checkouts/internal/*', (req, res, next) => {
 });
 
 // API handlers - MUST BE BEFORE MAIN PROXY
-app.post('/api/collect', (req, res) => {
+// API collect handler - PROXY to original with CORS fixes
+app.post('/api/collect', (req, res, next) => {
   console.log('📊 API collect intercepted:', req.body);
-  res.json({ status: 'ok' });
+  const collectProxy = createProxyMiddleware({
+    target: config.target,
+    changeOrigin: true,
+    secure: true,
+    timeout: 30000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', 'application/json, */*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Remove CORS restrictions
+      delete proxyRes.headers['access-control-allow-origin'];
+      delete proxyRes.headers['access-control-allow-methods'];
+      delete proxyRes.headers['access-control-allow-headers'];
+      
+      // Add our CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+      
+      console.log('📊 API collect response:', proxyRes.statusCode);
+    }
+  });
+  collectProxy(req, res);
 });
 
-app.get('/cart.js', (req, res) => {
+// Cart.js handler - PROXY to original with CORS fixes
+app.get('/cart.js', (req, res, next) => {
   console.log('🛒 Cart.js intercepted:', req.url);
-  res.json({
-    token: 'mock-token',
-    note: null,
-    attributes: {},
-    original_total_price: 0,
-    total_price: 0,
-    total_discount: 0,
-    total_weight: 0,
-    item_count: 0,
-    items: [],
-    requires_shipping: false,
-    currency: 'USD',
-    items_subtotal_price: 0,
-    cart_subtotal: 0,
-    cart_total: 0
+  const cartProxy = createProxyMiddleware({
+    target: config.target,
+    changeOrigin: true,
+    secure: true,
+    timeout: 30000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', 'application/json, */*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Remove CORS restrictions
+      delete proxyRes.headers['access-control-allow-origin'];
+      delete proxyRes.headers['access-control-allow-methods'];
+      delete proxyRes.headers['access-control-allow-headers'];
+      
+      // Add our CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+      
+      // Set correct content type
+      proxyRes.headers['Content-Type'] = 'application/json; charset=utf-8';
+      
+      console.log('🛒 Cart.js response:', proxyRes.statusCode, proxyRes.headers['content-type']);
+    }
   });
+  cartProxy(req, res);
 });
 
 app.post('/cart/add.js', (req, res) => {
@@ -899,16 +967,16 @@ app.post('/cart/change.js', (req, res) => {
   });
 });
 
-// Cart sections handler - CRITICAL for cart functionality
+// Cart sections handler - SIMPLIFIED to prevent 502 errors
 app.get('/cart', (req, res, next) => {
   if (req.query.sections) {
     console.log('🛒 Cart sections request:', req.url);
+    // SIMPLE proxy without selfHandleResponse to prevent 502
     const sectionsProxy = createProxyMiddleware({
       target: config.target,
       changeOrigin: true,
       secure: true,
-      timeout: 15000,
-      selfHandleResponse: true, // CRITICAL: Handle response manually
+      timeout: 30000,
       onProxyReq: (proxyReq, req, res) => {
         proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
         proxyReq.setHeader('Accept', 'application/json, text/html, */*');
@@ -934,29 +1002,7 @@ app.get('/cart', (req, res, next) => {
         // Set correct content type
         proxyRes.headers['Content-Type'] = 'application/json; charset=utf-8';
         
-        console.log('🛒 Cart sections response:', proxyRes.headers['content-type']);
-        
-        // Buffer and modify response
-        let body = Buffer.from('');
-        proxyRes.on('data', (chunk) => {
-          body = Buffer.concat([body, chunk]);
-        });
-        
-        proxyRes.on('end', () => {
-          try {
-            // Parse JSON and modify prices
-            const jsonData = JSON.parse(body.toString());
-            const modifiedData = modifyPrices(JSON.stringify(jsonData), 'application/json');
-            
-            // Send modified response
-            res.writeHead(proxyRes.statusCode, proxyRes.headers);
-            res.end(modifiedData);
-          } catch (e) {
-            console.error('❌ Cart sections JSON error:', e);
-            res.writeHead(proxyRes.statusCode, proxyRes.headers);
-            res.end(body);
-          }
-        });
+        console.log('🛒 Cart sections response:', proxyRes.statusCode, proxyRes.headers['content-type']);
       }
     });
     sectionsProxy(req, res);
@@ -1006,6 +1052,39 @@ app.get('/fonts.shopifycdn.com/*', (req, res, next) => {
     }
   });
   fontProxy(req, res);
+});
+
+// Monorail handler - PROXY to original with CORS fixes
+app.post('/.well-known/shopify/monorail/*', (req, res, next) => {
+  console.log('📊 Monorail intercepted:', req.url);
+  const monorailProxy = createProxyMiddleware({
+    target: config.target,
+    changeOrigin: true,
+    secure: true,
+    timeout: 30000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', 'application/json, */*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Remove CORS restrictions
+      delete proxyRes.headers['access-control-allow-origin'];
+      delete proxyRes.headers['access-control-allow-methods'];
+      delete proxyRes.headers['access-control-allow-headers'];
+      
+      // Add our CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+      
+      console.log('📊 Monorail response:', proxyRes.statusCode);
+    }
+  });
+  monorailProxy(req, res);
 });
 
 // Service Worker handler - MUST BE BEFORE MAIN PROXY
