@@ -171,9 +171,13 @@ const proxyOptions = {
         
         // Ищем и заменяем цены в различных форматах
         const pricePatterns = [
-          // USD $3,500.00 -> $1,750.00
-          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-          // USD 3500.00 -> 1750.00
+          // From $350.00 USD -> From $175.00 USD
+          /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+          // $350.00 USD -> $175.00 USD
+          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+          // USD $3,500.00 -> USD $1,750.00
+          /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          // USD 3500.00 -> USD 1750.00
           /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
           // 3500.00 USD -> 1750.00 USD
           /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
@@ -207,7 +211,9 @@ const proxyOptions = {
           /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g,
           /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*per\s+ticket/g,
           // Цены в формате "900.00 /ticket"
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g,
+          // Простые цены с долларом
+          /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
         ];
         
         pricePatterns.forEach(pattern => {
@@ -414,7 +420,17 @@ const proxyOptions = {
                   '[data-price]',
                   'span:contains("$")',
                   'div:contains("USD")',
-                  'p:contains("$")'
+                  'p:contains("$")',
+                  'h1:contains("$")',
+                  'h2:contains("$")',
+                  'h3:contains("$")',
+                  'h4:contains("$")',
+                  'h5:contains("$")',
+                  'h6:contains("$")',
+                  'strong:contains("$")',
+                  'b:contains("$")',
+                  'em:contains("$")',
+                  'i:contains("$")'
                 ];
                 
                 priceSelectors.forEach(selector => {
@@ -422,25 +438,42 @@ const proxyOptions = {
                     const elements = document.querySelectorAll(selector);
                     elements.forEach(element => {
                       const text = element.textContent || element.innerText || '';
-                      const priceMatch = text.match(/\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
                       
-                      if (priceMatch) {
-                        const originalPrice = priceMatch[1];
-                        const cleanPrice = originalPrice.replace(/,/g, '');
-                        const priceValue = parseFloat(cleanPrice);
-                        
-                        if (!isNaN(priceValue) && priceValue > 0) {
-                          const newPrice = Math.round(priceValue / 2 * 100) / 100;
-                          const formattedPrice = newPrice.toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
+                      // Ищем цены в различных форматах
+                      const pricePatterns = [
+                        /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                        /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                        /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                        /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                        /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                        /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+                      ];
+                      
+                      pricePatterns.forEach(pattern => {
+                        const matches = text.match(pattern);
+                        if (matches) {
+                          matches.forEach(match => {
+                            const priceMatch = match.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+                            if (priceMatch) {
+                              const originalPrice = priceMatch[1];
+                              const cleanPrice = originalPrice.replace(/,/g, '');
+                              const priceValue = parseFloat(cleanPrice);
+                              
+                              if (!isNaN(priceValue) && priceValue > 0) {
+                                const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                                const formattedPrice = newPrice.toLocaleString('en-US', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2
+                                });
+                                
+                                const newText = text.replace(match, match.replace(originalPrice, formattedPrice));
+                                element.textContent = newText;
+                                console.log('💰 Client price changed:', match, '->', match.replace(originalPrice, formattedPrice));
+                              }
+                            }
                           });
-                          
-                          const newText = text.replace(priceMatch[0], '$' + formattedPrice);
-                          element.textContent = newText;
-                          console.log('💰 Client price changed:', priceMatch[0], '->', '$' + formattedPrice);
                         }
-                      }
+                      });
                     });
                   } catch (e) {
                     // Игнорируем ошибки селекторов
@@ -470,6 +503,69 @@ const proxyOptions = {
               setTimeout(modifyPricesOnPage, 500);
               setTimeout(modifyPricesOnPage, 2000);
               setTimeout(modifyPricesOnPage, 5000);
+              
+              // Агрессивный поиск и изменение цен по всему документу
+              function aggressivePriceModification() {
+                console.log('💰 Aggressive price modification...');
+                
+                // Ищем все текстовые узлы
+                const walker = document.createTreeWalker(
+                  document.body,
+                  NodeFilter.SHOW_TEXT,
+                  null,
+                  false
+                );
+                
+                const textNodes = [];
+                let node;
+                while (node = walker.nextNode()) {
+                  textNodes.push(node);
+                }
+                
+                textNodes.forEach(textNode => {
+                  const text = textNode.textContent;
+                  if (text && text.includes('$')) {
+                    // Ищем цены в тексте
+                    const pricePatterns = [
+                      /From\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                      /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                      /USD\s+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                      /USD\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+                      /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g,
+                      /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+                    ];
+                    
+                    let modifiedText = text;
+                    pricePatterns.forEach(pattern => {
+                      modifiedText = modifiedText.replace(pattern, (match, price) => {
+                        const cleanPrice = price.replace(/,/g, '');
+                        const priceValue = parseFloat(cleanPrice);
+                        
+                        if (!isNaN(priceValue) && priceValue > 0) {
+                          const newPrice = Math.round(priceValue / 2 * 100) / 100;
+                          const formattedPrice = newPrice.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          });
+                          
+                          console.log('💰 Aggressive price changed:', match, '->', match.replace(price, formattedPrice));
+                          return match.replace(price, formattedPrice);
+                        }
+                        return match;
+                      });
+                    });
+                    
+                    if (modifiedText !== text) {
+                      textNode.textContent = modifiedText;
+                    }
+                  }
+                });
+              }
+              
+              // Запускаем агрессивное изменение цен
+              setTimeout(aggressivePriceModification, 1000);
+              setTimeout(aggressivePriceModification, 3000);
+              setTimeout(aggressivePriceModification, 6000);
             })();
           </script>
         `;
