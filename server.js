@@ -4,7 +4,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const VERSION = '7.0.5'; // FIXED BY AI ASSISTANT - FORCE RAILWAY UPDATE
+const VERSION = '7.0.6'; // FIXED BY AI ASSISTANT - CART RESPONSE FIX
 
 // Middleware
 app.use(cors({
@@ -318,11 +318,86 @@ app.post('/cart/add.js', (req, res) => {
 
 app.post('/cart/change.js', (req, res) => {
   console.log('🛒 Cart change intercepted:', req.body);
-  res.status(200).json({ 
-    success: true, 
-    message: 'Cart updated',
-    items: [{ id: req.body.id || '123', quantity: req.body.quantity || 1 }]
-  });
+  
+  // Если количество = 0, это удаление товара
+  if (req.body.quantity === 0) {
+    console.log('🗑️ Removing item from cart');
+    res.status(200).json({
+      token: 'cart_token_123',
+      note: '',
+      attributes: {},
+      original_total_price: 0,
+      total_price: 0,
+      total_discount: 0,
+      total_weight: 0.0,
+      item_count: 0,
+      cart_level_discount_applications: [],
+      items: [],
+      requires_shipping: false,
+      currency: 'USD',
+      items_subtotal_price: 0,
+      cart_subtotal: 0,
+      cart_total: 0
+    });
+  } else {
+    // Если количество > 0, это добавление/изменение товара
+    console.log('➕ Adding/updating item in cart');
+    res.status(200).json({
+      token: 'cart_token_123',
+      note: '',
+      attributes: {},
+      original_total_price: 1800, // Цена в 2 раза меньше
+      total_price: 1800,
+      total_discount: 0,
+      total_weight: 0.0,
+      item_count: req.body.quantity || 1,
+      cart_level_discount_applications: [],
+      items: [{
+        id: req.body.id || '123456789',
+        properties: {},
+        quantity: req.body.quantity || 1,
+        variant_id: 46787256844480,
+        key: req.body.id || '123456789',
+        title: 'FIFA World Cup 2026 Match 2 Guadalajara',
+        variant_title: 'Category 4',
+        vendor: 'GoalTickets',
+        product_id: 123456789,
+        sku: 'WC2026-GDL-CAT4',
+        price: 900, // Цена в 2 раза меньше
+        original_price: 1800,
+        discounted_price: 900,
+        line_price: 900 * (req.body.quantity || 1),
+        original_line_price: 1800 * (req.body.quantity || 1),
+        total_discount: 0,
+        discounts: [],
+        requires_shipping: false,
+        taxable: true,
+        gift_card: false,
+        name: 'FIFA World Cup 2026 Match 2 Guadalajara - Category 4',
+        variant_inventory_management: 'shopify',
+        properties: {},
+        product_exists: true,
+        product_available: true,
+        product_title: 'FIFA World Cup 2026 Match 2 Guadalajara',
+        product_description: 'Premium tickets for FIFA World Cup 2026',
+        variant_title: 'Category 4',
+        variant_options: ['Category 4'],
+        options_with_values: [
+          {
+            name: 'Category',
+            value: 'Category 4'
+          }
+        ],
+        line_level_discount_allocations: [],
+        line_level_total_discount: 0
+      }],
+      requires_shipping: false,
+      currency: 'USD',
+      items_subtotal_price: 900 * (req.body.quantity || 1),
+      cart_subtotal: 900 * (req.body.quantity || 1),
+      cart_total: 900 * (req.body.quantity || 1)
+    });
+  }
 });
 
 app.post('/cart/update.js', (req, res) => {
