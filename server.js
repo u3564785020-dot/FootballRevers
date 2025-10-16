@@ -23,7 +23,7 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.0';
+const VERSION = '8.0.1';
 
 // Configuration
 const config = {
@@ -59,13 +59,16 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://goaltickets.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://goaltickets.com"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://goaltickets.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:", "http:", "data:"],
+      fontSrc: ["'self'", "https:", "http:", "data:"],
+      imgSrc: ["'self'", "data:", "https:", "http:", "blob:"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:", "http:", "blob:"],
       connectSrc: ["'self'", "wss:", "https:", "http:"],
-      frameSrc: ["'self'", "https://goaltickets.com"],
+      frameSrc: ["'self'", "https:", "http:"],
       objectSrc: ["'none'"],
+      mediaSrc: ["'self'", "https:", "http:", "blob:"],
+      workerSrc: ["'self'", "blob:"],
+      childSrc: ["'self'", "blob:"],
       upgradeInsecureRequests: []
     }
   },
@@ -475,6 +478,52 @@ const proxyOptions = {
   }
 };
 
+// Special CDN handlers for fonts and assets
+app.get('/cdn/*', (req, res, next) => {
+  console.log('📦 CDN request:', req.url);
+  const cdnProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    timeout: 15000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', '*/*');
+      proxyReq.setHeader('Origin', `https://${config.proxyDomain}`);
+      proxyReq.setHeader('Referer', `https://${config.proxyDomain}/`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // Remove all CORS restrictions
+      delete proxyRes.headers['access-control-allow-origin'];
+      delete proxyRes.headers['access-control-allow-methods'];
+      delete proxyRes.headers['access-control-allow-headers'];
+      
+      // Add our CORS headers
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, Referer';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+      proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+      
+      // Fix MIME types
+      if (req.url.includes('.woff2')) {
+        proxyRes.headers['Content-Type'] = 'font/woff2';
+      } else if (req.url.includes('.woff')) {
+        proxyRes.headers['Content-Type'] = 'font/woff';
+      } else if (req.url.includes('.ttf')) {
+        proxyRes.headers['Content-Type'] = 'font/ttf';
+      } else if (req.url.includes('.js')) {
+        proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+      } else if (req.url.includes('.css')) {
+        proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
+      }
+      
+      console.log('📦 CDN response:', proxyRes.headers['content-type']);
+    }
+  });
+  cdnProxy(req, res);
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -484,6 +533,76 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     environment: config.environment
+  });
+});
+
+// API handlers
+app.post('/api/collect', (req, res) => {
+  console.log('📊 API collect intercepted:', req.body);
+  res.json({ status: 'ok' });
+});
+
+app.get('/cart.js', (req, res) => {
+  console.log('🛒 Cart.js intercepted:', req.url);
+  res.json({
+    token: 'mock-token',
+    note: null,
+    attributes: {},
+    original_total_price: 0,
+    total_price: 0,
+    total_discount: 0,
+    total_weight: 0,
+    item_count: 0,
+    items: [],
+    requires_shipping: false,
+    currency: 'USD',
+    items_subtotal_price: 0,
+    cart_subtotal: 0,
+    cart_total: 0
+  });
+});
+
+app.post('/cart/add.js', (req, res) => {
+  console.log('🛒 Cart add intercepted:', req.body);
+  res.json({
+    status: 'success',
+    message: 'Item added to cart',
+    token: 'mock-token',
+    note: null,
+    attributes: {},
+    original_total_price: 0,
+    total_price: 0,
+    total_discount: 0,
+    total_weight: 0,
+    item_count: 0,
+    items: [],
+    requires_shipping: false,
+    currency: 'USD',
+    items_subtotal_price: 0,
+    cart_subtotal: 0,
+    cart_total: 0
+  });
+});
+
+app.post('/cart/change.js', (req, res) => {
+  console.log('🛒 Cart change intercepted:', req.body);
+  res.json({
+    status: 'success',
+    message: 'Cart updated',
+    token: 'mock-token',
+    note: null,
+    attributes: {},
+    original_total_price: 0,
+    total_price: 0,
+    total_discount: 0,
+    total_weight: 0,
+    item_count: 0,
+    items: [],
+    requires_shipping: false,
+    currency: 'USD',
+    items_subtotal_price: 0,
+    cart_subtotal: 0,
+    cart_total: 0
   });
 });
 
