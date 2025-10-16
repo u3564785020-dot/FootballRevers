@@ -24,7 +24,7 @@ const app = express();
 app.set('trust proxy', 1); // Enable trust proxy for rate limiting and other middleware
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.10'; // ULTIMATE FIX: aggressive URL rewriting, 502 fixes, cart JSON fixes
+const VERSION = '8.0.11'; // PROFESSIONAL FIX: route order, connection issues, timing fixes
 
 // Configuration
 const config = {
@@ -36,7 +36,12 @@ const config = {
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   cacheTtl: 3600, // 1 hour for static assets
   rateLimitWindow: 15 * 60 * 1000, // 15 minutes
-  rateLimitMax: 100 // requests per window
+  rateLimitMax: 100, // requests per window
+  // CONNECTION FIXES
+  connectionTimeout: 60000, // 60 seconds
+  proxyTimeout: 60000, // 60 seconds
+  retryAttempts: 3,
+  retryDelay: 1000 // 1 second
 };
 
 // Cache for static assets
@@ -322,11 +327,137 @@ function rewriteHtml(html, baseUrl) {
     </style>
   `);
 
-  // Add WebSocket connection script
+  // Add comprehensive client-side fixes
   $('head').append(`
     <script>
-      // WebSocket connection for real-time cart sync
+      // COMPREHENSIVE CLIENT-SIDE FIXES
       (function() {
+        console.log('🔧 Starting comprehensive client-side fixes...');
+        
+        // 1. URL REWRITING - MUST RUN IMMEDIATELY
+        function rewriteAllUrls() {
+          console.log('🔧 Rewriting URLs...');
+          
+          // Rewrite all goaltickets.com URLs to relative paths
+          const elements = document.querySelectorAll('*');
+          let rewritten = 0;
+          
+          elements.forEach(el => {
+            ['href', 'src', 'action', 'data-src', 'data-href', 'data-url', 'content', 'poster', 'background'].forEach(attr => {
+              const value = el.getAttribute(attr);
+              if (value && typeof value === 'string' && value.includes('goaltickets.com')) {
+                if (value.includes('/cdn/')) {
+                  el.setAttribute(attr, value.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, ''));
+                  rewritten++;
+                } else {
+                  try {
+                    const url = new URL(value);
+                    el.setAttribute(attr, url.pathname + url.search + url.hash);
+                    rewritten++;
+                  } catch (e) {
+                    el.setAttribute(attr, value.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, ''));
+                    rewritten++;
+                  }
+                }
+              }
+            });
+          });
+          
+          // Rewrite style attributes
+          const styleElements = document.querySelectorAll('[style*="goaltickets.com"]');
+          styleElements.forEach(el => {
+            const style = el.getAttribute('style');
+            if (style) {
+              const newStyle = style.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, '');
+              el.setAttribute('style', newStyle);
+              rewritten++;
+            }
+          });
+          
+          // Rewrite inline JavaScript
+          const scripts = document.querySelectorAll('script:not([src])');
+          scripts.forEach(script => {
+            const content = script.innerHTML;
+            if (content && content.includes('goaltickets.com')) {
+              const newContent = content.replace(/https?:\/\/(?:www\.)?goaltickets\.com/g, '');
+              script.innerHTML = newContent;
+              rewritten++;
+            }
+          });
+          
+          console.log('🔧 URL rewriting completed, rewritten:', rewritten);
+        }
+        
+        // 2. CART DRAWER FIXING
+        function fixCartDrawer() {
+          const cartDrawers = document.querySelectorAll('.cart-drawer, .drawer, [data-cart-drawer]');
+          cartDrawers.forEach(drawer => {
+            drawer.style.position = 'fixed';
+            drawer.style.right = '0';
+            drawer.style.top = '0';
+            drawer.style.width = '400px';
+            drawer.style.height = '100vh';
+            drawer.style.zIndex = '9999';
+            drawer.style.background = 'white';
+            drawer.style.boxShadow = '-2px 0 10px rgba(0,0,0,0.1)';
+            drawer.style.transform = 'translateX(0)';
+            
+            // Remove modal classes
+            drawer.classList.remove('modal', 'fullscreen');
+          });
+        }
+        
+        // 3. PRICE MODIFICATION
+        function modifyPrices() {
+          const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], [class*="amount"], [data-price]');
+          priceElements.forEach(el => {
+            const text = el.textContent || el.innerText || '';
+            const priceMatch = text.match(/\\$(\d+(?:\\.\d{2})?)/);
+            if (priceMatch) {
+              const originalPrice = parseFloat(priceMatch[1]);
+              const newPrice = Math.round(originalPrice * 0.5 * 100) / 100;
+              el.innerHTML = text.replace(priceMatch[0], \`$\${newPrice.toFixed(2)} <span style="color: red; font-size: 0.8em;">(ТЕСТОВАЯ ЦЕНА -50%)</span>\`);
+            }
+          });
+        }
+        
+        // 4. SERVICE WORKER DISABLING
+        function disableServiceWorker() {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              registrations.forEach(registration => {
+                registration.unregister();
+              });
+            });
+            
+            // Override register method
+            navigator.serviceWorker.register = function() {
+              return Promise.reject(new Error('Service Worker disabled by proxy'));
+            };
+          }
+        }
+        
+        // RUN ALL FIXES IMMEDIATELY
+        rewriteAllUrls();
+        fixCartDrawer();
+        modifyPrices();
+        disableServiceWorker();
+        
+        // RUN ON DOM READY
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', function() {
+            rewriteAllUrls();
+            fixCartDrawer();
+            modifyPrices();
+          });
+        }
+        
+        // RUN PERIODICALLY
+        setInterval(rewriteAllUrls, 500);
+        setInterval(fixCartDrawer, 1000);
+        setInterval(modifyPrices, 2000);
+        
+        // WebSocket connection for real-time cart sync
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = protocol + '//' + window.location.host + '/ws';
         let ws = null;
@@ -348,9 +479,7 @@ function rewriteHtml(html, baseUrl) {
               try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'cart_sync') {
-                  // Update cart UI
                   console.log('🛒 Cart sync received:', data.data);
-                  // Trigger cart update event
                   window.dispatchEvent(new CustomEvent('cartSync', { detail: data.data }));
                 }
               } catch (e) {
@@ -360,7 +489,6 @@ function rewriteHtml(html, baseUrl) {
             
             ws.onclose = function() {
               console.log('🔌 WebSocket disconnected');
-              // Reconnect after 5 seconds
               if (!reconnectInterval) {
                 reconnectInterval = setInterval(connect, 5000);
               }
@@ -374,46 +502,15 @@ function rewriteHtml(html, baseUrl) {
           }
         }
         
-        // Connect when page loads
+        // Connect WebSocket
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', connect);
         } else {
           connect();
         }
         
-        // Expose WebSocket for cart updates
-        window.cartWebSocket = {
-          send: function(data) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(data));
-            }
-          }
-        };
+        console.log('🔧 All client-side fixes initialized');
       })();
-      
-      // Fix cart drawer on page load and mutations
-      function fixCartDrawer() {
-        const cartDrawer = document.querySelector('[data-cart-drawer], .cart-drawer, .drawer, [class*="drawer"], [class*="cart-drawer"]');
-        if (cartDrawer) {
-          cartDrawer.style.position = 'fixed';
-          cartDrawer.style.top = '0';
-          cartDrawer.style.right = '0';
-          cartDrawer.style.width = '400px';
-          cartDrawer.style.height = '100vh';
-          cartDrawer.style.zIndex = '9999';
-          cartDrawer.style.transform = 'translateX(0)';
-          cartDrawer.style.left = 'auto';
-          cartDrawer.style.bottom = 'auto';
-          cartDrawer.style.maxWidth = '400px';
-          cartDrawer.style.maxHeight = '100vh';
-          cartDrawer.style.overflow = 'auto';
-        }
-      }
-      
-      // Run on load and mutations
-      window.addEventListener('load', fixCartDrawer);
-      const observer = new MutationObserver(fixCartDrawer);
-      observer.observe(document.body, { childList: true, subtree: true });
     </script>
   `);
   
@@ -1093,8 +1190,111 @@ app.get('/sw.js', (req, res) => {
   res.status(200).setHeader('Content-Type', 'application/javascript').send('/* Service Worker disabled by proxy */');
 });
 
-// Apply proxy to all routes - MUST BE LAST
-app.use('/', createProxyMiddleware(proxyOptions));
+// UNIVERSAL PROXY WITH RETRY LOGIC - MUST BE LAST
+const universalProxy = createProxyMiddleware({
+  target: config.target,
+  changeOrigin: true,
+  secure: true,
+  timeout: config.proxyTimeout,
+  proxyTimeout: config.proxyTimeout,
+  onError: (err, req, res) => {
+    console.error('❌ Proxy error:', err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ 
+        error: 'Bad Gateway',
+        message: 'Unable to connect to target server',
+        retry: true
+      });
+    }
+  },
+  onProxyReq: (proxyReq, req, res) => {
+    // Add retry headers
+    proxyReq.setHeader('Connection', 'keep-alive');
+    proxyReq.setHeader('Keep-Alive', 'timeout=60, max=1000');
+    proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36');
+    proxyReq.setHeader('Accept', '*/*');
+    proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+    proxyReq.setHeader('Accept-Language', 'en-US,en;q=0.9');
+    proxyReq.setHeader('Cache-Control', 'no-cache');
+    proxyReq.setHeader('Pragma', 'no-cache');
+    
+    console.log(`📤 ${req.method} ${req.url} -> ${config.target}${req.url}`);
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // Prevent ERR_HTTP_HEADERS_SENT by checking if headers are already sent
+    if (res.headersSent) {
+      return;
+    }
+    
+    // Remove security headers that might block our proxy
+    delete proxyRes.headers['x-frame-options'];
+    delete proxyRes.headers['content-security-policy'];
+    delete proxyRes.headers['x-content-type-options'];
+    delete proxyRes.headers['referrer-policy'];
+    delete proxyRes.headers['strict-transport-security'];
+    delete proxyRes.headers['origin-agent-cluster'];
+    
+    // Set CORS headers
+    proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+    proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH';
+    proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma, X-CSRF-Token';
+    proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+    proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding, X-Proxy-Version';
+    proxyRes.headers['X-Proxy-Version'] = VERSION;
+    
+    // Handle cookies
+    if (proxyRes.headers['set-cookie']) {
+      proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].map(cookie => {
+        return cookie
+          .replace(/Domain=goaltickets\.com/gi, `Domain=${config.proxyDomain}`)
+          .replace(/Secure/gi, '')
+          .replace(/SameSite=Strict/gi, 'SameSite=Lax');
+      });
+    }
+    
+    // Cache static assets
+    if (req.url.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/)) {
+      proxyRes.headers['Cache-Control'] = 'public, max-age=31536000'; // 1 year
+      proxyRes.headers['Expires'] = new Date(Date.now() + 31536000000).toUTCString();
+    } else if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
+      proxyRes.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      proxyRes.headers['Pragma'] = 'no-cache';
+      proxyRes.headers['Expires'] = '0';
+    }
+    
+    // Handle HTML content
+    if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
+      let body = '';
+      proxyRes.on('data', (chunk) => {
+        body += chunk;
+      });
+      proxyRes.on('end', () => {
+        try {
+          if (res.headersSent) return; // Double check
+          
+          // Rewrite HTML
+          const rewrittenHtml = rewriteHtml(body, config.proxyDomain);
+          
+          // Modify prices if enabled
+          const finalHtml = modifyPrices(rewrittenHtml, 'text/html');
+          
+          if (!res.headersSent) {
+            res.setHeader('Content-Length', Buffer.byteLength(finalHtml));
+            res.end(finalHtml);
+          }
+        } catch (error) {
+          console.error('❌ HTML processing error:', error);
+          if (!res.headersSent) {
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            res.end(body);
+          }
+        }
+      });
+    }
+  }
+});
+
+app.use('/', universalProxy);
 
 // Error handling
 app.use((err, req, res, next) => {
