@@ -23,7 +23,7 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.5';
+const VERSION = '8.0.6'; // FIX CDN URL rewriting
 
 // Configuration
 const config = {
@@ -146,29 +146,53 @@ wss.on('connection', (ws, req) => {
 function rewriteHtml(html, baseUrl) {
   const $ = cheerio.load(html);
   
-  // Rewrite absolute URLs
+  // Rewrite absolute URLs to relative (except CDN which goes through our proxy)
   $('a[href^="https://goaltickets.com"]').each((i, el) => {
     const href = $(el).attr('href');
-    const url = new URL(href);
-    $(el).attr('href', url.pathname + url.search + url.hash);
+    if (href.includes('/cdn/')) {
+      // CDN resources go through our proxy
+      $(el).attr('href', href.replace('https://goaltickets.com', ''));
+    } else {
+      // Other links become relative
+      const url = new URL(href);
+      $(el).attr('href', url.pathname + url.search + url.hash);
+    }
   });
   
   $('img[src^="https://goaltickets.com"]').each((i, el) => {
     const src = $(el).attr('src');
-    const url = new URL(src);
-    $(el).attr('src', url.pathname + url.search + url.hash);
+    if (src.includes('/cdn/')) {
+      // CDN resources go through our proxy
+      $(el).attr('src', src.replace('https://goaltickets.com', ''));
+    } else {
+      // Other images become relative
+      const url = new URL(src);
+      $(el).attr('src', url.pathname + url.search + url.hash);
+    }
   });
   
   $('script[src^="https://goaltickets.com"]').each((i, el) => {
     const src = $(el).attr('src');
-    const url = new URL(src);
-    $(el).attr('src', url.pathname + url.search + url.hash);
+    if (src.includes('/cdn/')) {
+      // CDN resources go through our proxy
+      $(el).attr('src', src.replace('https://goaltickets.com', ''));
+    } else {
+      // Other scripts become relative
+      const url = new URL(src);
+      $(el).attr('src', url.pathname + url.search + url.hash);
+    }
   });
   
   $('link[href^="https://goaltickets.com"]').each((i, el) => {
     const href = $(el).attr('href');
-    const url = new URL(href);
-    $(el).attr('href', url.pathname + url.search + url.hash);
+    if (href.includes('/cdn/')) {
+      // CDN resources go through our proxy
+      $(el).attr('href', href.replace('https://goaltickets.com', ''));
+    } else {
+      // Other links become relative
+      const url = new URL(href);
+      $(el).attr('href', url.pathname + url.search + url.hash);
+    }
   });
   
   // Rewrite form actions
