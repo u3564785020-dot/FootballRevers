@@ -5,7 +5,7 @@ const helmet = require('helmet');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-const VERSION = '3.0.0'; // Версия для принудительного обновления
+const VERSION = '4.0.0'; // Версия для принудительного обновления
 
 // Оптимизация памяти для Railway
 if (process.env.NODE_ENV === 'production') {
