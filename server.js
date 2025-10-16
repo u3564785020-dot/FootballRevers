@@ -6,11 +6,27 @@ const helmet = require('helmet');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Оптимизация памяти для Railway
+if (process.env.NODE_ENV === 'production') {
+  // Увеличиваем лимит памяти для обработки больших HTML страниц
+  const v8 = require('v8');
+  const heapStats = v8.getHeapStatistics();
+  console.log('📊 Memory stats:', {
+    totalHeapSize: Math.round(heapStats.total_heap_size / 1024 / 1024) + 'MB',
+    usedHeapSize: Math.round(heapStats.used_heap_size / 1024 / 1024) + 'MB',
+    heapSizeLimit: Math.round(heapStats.heap_size_limit / 1024 / 1024) + 'MB'
+  });
+}
+
 // Middleware
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
+
+// Увеличиваем лимит размера тела запроса для больших HTML страниц
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use(cors({
   origin: true,
@@ -52,6 +68,16 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
 });
+
+// Периодическая сборка мусора для оптимизации памяти
+if (process.env.NODE_ENV === 'production') {
+  setInterval(() => {
+    if (global.gc) {
+      global.gc();
+      console.log('🗑️ Garbage collection completed');
+    }
+  }, 30000); // Каждые 30 секунд
+}
 
 // Обработка статических файлов локально
 app.get('/index_files/*', (req, res, next) => {

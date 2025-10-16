@@ -8,7 +8,6 @@
 ```
 NODE_ENV=production
 PORT=8080
-NODE_OPTIONS=--max-old-space-size=1024
 ```
 
 ### 2. **Настройки Deploy (Развертывание)**
