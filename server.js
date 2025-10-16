@@ -23,7 +23,7 @@ const { URL } = require('url');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-const VERSION = '8.0.1';
+const VERSION = '8.0.2';
 
 // Configuration
 const config = {
@@ -478,7 +478,31 @@ const proxyOptions = {
   }
 };
 
-// Special CDN handlers for fonts and assets
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    version: VERSION,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    environment: config.environment
+  });
+});
+
+// WebSocket endpoint info
+app.get('/ws-info', (req, res) => {
+  res.json({
+    websocket: {
+      url: `wss://${config.proxyDomain}/ws`,
+      connected_clients: wss.clients.size,
+      status: 'active'
+    },
+    version: VERSION
+  });
+});
+
+// Special CDN handlers for fonts and assets - MUST BE BEFORE MAIN PROXY
 app.get('/cdn/*', (req, res, next) => {
   console.log('📦 CDN request:', req.url);
   const cdnProxy = createProxyMiddleware({
@@ -524,19 +548,7 @@ app.get('/cdn/*', (req, res, next) => {
   cdnProxy(req, res);
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    version: VERSION,
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    environment: config.environment
-  });
-});
-
-// API handlers
+// API handlers - MUST BE BEFORE MAIN PROXY
 app.post('/api/collect', (req, res) => {
   console.log('📊 API collect intercepted:', req.body);
   res.json({ status: 'ok' });
@@ -606,19 +618,7 @@ app.post('/cart/change.js', (req, res) => {
   });
 });
 
-// WebSocket endpoint info
-app.get('/ws-info', (req, res) => {
-  res.json({
-    websocket: {
-      url: `wss://${config.proxyDomain}/ws`,
-      connected_clients: wss.clients.size,
-      status: 'active'
-    },
-    version: VERSION
-  });
-});
-
-// Apply proxy to all routes
+// Apply proxy to all routes - MUST BE LAST
 app.use('/', createProxyMiddleware(proxyOptions));
 
 // Error handling
